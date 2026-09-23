@@ -1,9 +1,10 @@
-import { GoogleGenAI, type Content } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel, type Content } from '@google/genai';
 import { z } from 'zod';
 import { planSchema, type Plan, type Settings } from '../shared/protocol.ts';
 import { KeyPool, PublicError } from './keys.ts';
 import { writerInstruction } from './prompts.ts';
 import { countFullRequest } from './tokens.ts';
+import { languageReason } from './languages.ts';
 
 export class ContextFull extends PublicError {}
 export function fingerprint(text: string) { return text.normalize('NFKC').toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim(); }
@@ -35,7 +36,7 @@ export class Planner {
   cumulativeInput = 0;
   cumulativeOutput = 0;
   readonly system: string;
-  constructor(readonly model: string, readonly pool: KeyPool, settings: Settings, readonly ceiling: number,
+  constructor(readonly model: string, readonly pool: KeyPool, private settings: Settings, readonly ceiling: number,
     private client = (key: string) => new GoogleGenAI({ apiKey: key }), private counter = countFullRequest) {
     this.system = writerInstruction(settings);
   }
@@ -46,7 +47,7 @@ export class Planner {
   }
   observe(text: string) { this.history.push({ role: 'user', parts: [{ text }] }); }
   async next(signal: AbortSignal, onContext: () => void): Promise<Plan> {
-    this.observe(this.plans.length ? 'Continue with the next fresh passage. Use all preceding plans and narration receipts. The most recent planned passage may still be speaking; continue after its script without repeating it.' : 'Begin the podcast with a vivid, specific detail.');
+    this.observe(this.plans.length ? 'Continue with the next fresh passage. Use all preceding plans and narration receipts. The most recent planned passage may still be speaking; continue after its script without repeating it.' : 'Begin the podcast with a specific fact. Keep the first target sentence especially concise, about 8–12 words, with a compact faithful translation. Then develop that fact in the remaining pairs.');
     for (let repair = 0; repair < 3; repair++) {
       const response = await this.pool.run(async key => {
         const ai = this.client(key);
@@ -58,8 +59,15 @@ export class Planner {
         if (this.used + 8192 >= this.limit) throw new ContextFull('The episode reached its full-memory context limit.');
         return ai.models.generateContent({
           model: this.model, contents,
-          config: { systemInstruction: this.system, responseMimeType: 'application/json', responseJsonSchema: z.toJSONSchema(planSchema),
-            temperature: 0.9, maxOutputTokens: 4096, abortSignal: signal, httpOptions: { timeout: 60_000 } },
+          config: { systemInstruction: this.system, responseMimeType: 'application/json', responseJsonSchema: z.toJSONSchema(planSchema.extend({
+            pairs: z.array(z.object({
+              target: z.string().min(1).max(300).describe(`The sentence in ${this.settings.target.name}, spoken FIRST.`),
+              native: z.string().min(1).max(400).describe(`Faithful translation into ${this.settings.native.name}, spoken SECOND.`),
+            })).min(1).max(4),
+          })),
+            ...(this.model.startsWith('gemini-2.5-flash') ? { thinkingConfig: { thinkingBudget: 0 } }
+              : this.model.includes('flash-lite') ? { thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL } } : {}),
+            temperature: 0.8, maxOutputTokens: 2048, abortSignal: signal, httpOptions: { timeout: 60_000 } },
         });
       }, signal);
       this.cumulativeInput += response.usageMetadata?.promptTokenCount ?? this.used;
@@ -71,9 +79,10 @@ export class Planner {
       let reason = 'Return valid JSON matching the schema. Keep sentences short and return at most four bilingual pairs.';
       try {
         const plan = planSchema.parse(JSON.parse(raw));
+        const language = languageReason(plan, this.settings);
         const repeat = repetitionReason(plan, this.plans);
-        if (!repeat) { this.plans.push(plan); return plan; }
-        reason = `${repeat} Choose a different concrete fact and example. Do not paraphrase the repeated material.`;
+        if (!language && !repeat) { this.plans.push(plan); return plan; }
+        reason = language || `${repeat} Choose a different concrete fact and example. Do not paraphrase the repeated material.`;
       } catch { /* Invalid structured response: bounded repair with full history. */ }
       this.observe(`This draft was NOT narrated. Repair required: ${reason}`);
     }

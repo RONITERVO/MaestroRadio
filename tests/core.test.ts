@@ -91,7 +91,7 @@ test('text before audio is held until actual samples exist; CJK fragments surviv
 });
 test('backpressure respects pauses and rejects impossible forward playback claims', () => {
   const gate = new PlaybackGate();
-  assert.equal(gate.canProduce(13 * 24000), false);
+  assert.equal(gate.canProduce(46 * 24000), false);
   gate.update(9999999, true, 24000); assert.equal(gate.played, 24000); assert.equal(gate.canProduce(24000), false);
   gate.update(0, false, 24000); assert.equal(gate.played, 24000); assert.equal(gate.canProduce(24000), true);
 });
@@ -126,6 +126,21 @@ test('Live closes a late connection after cancellation without sending a turn', 
   resolveConnect({ close: () => closed++, sendClientContent: () => sent++ } as unknown as Session);
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(closed, 1); assert.equal(sent, 0);
+});
+
+test('Live finishes on generationComplete without waiting for simulated playback', async () => {
+  let closed = 0;
+  const result = await narrate({ key: 'test', model: 'test', voice: 'Kore', lines: linesFor(plan, settings), signal: signal(),
+    onAudio() {}, onCue() {}, timeoutMs: 500,
+    connect: async ({ callbacks }: LiveConnectParameters) => ({ close: () => closed++, sendClientContent() {
+      const message = new LiveServerMessage();
+      message.serverContent = { modelTurn: { parts: [{ inlineData: { data: Buffer.alloc(4800).toString('base64'), mimeType: 'audio/pcm;rate=24000' } }] },
+        outputTranscription: { text: 'Las hojas liberan agua.' }, generationComplete: true };
+      callbacks.onmessage!(message);
+      // No turnComplete event is sent: the provider is still waiting for its playback clock.
+    } } as unknown as Session),
+  });
+  assert.equal(result.samples, 2400); assert.equal(closed, 1); assert.match(result.transcript, /Las hojas/);
 });
 test('REST token count includes system and every ledger message without putting keys in the URL', async () => {
   const count = await countFullRequest({ key: 'secret', model: 'models/gemini-test', contents: [{ role: 'user', parts: [{ text: 'earliest fact' }] }], system: 'full instructions', signal: signal() },
