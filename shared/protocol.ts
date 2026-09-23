@@ -5,6 +5,9 @@ export const settingsSchema = z.object({
   topic: z.string().trim().max(2000).default(''),
   style: z.string().trim().max(1200).default(''),
   expressive: z.boolean().default(false),
+  music: z.boolean().default(true),
+  musicPrompt: z.string().trim().max(1000).default('Warm cinematic ambient, soft felt piano, gentle acoustic textures, spacious and slowly evolving, instrumental, understated documentary score'),
+  musicVolume: z.number().min(0).max(1).default(0.6),
   speed: z.number().min(1).max(2).default(1),
   target: languageSchema.default({ name: 'Spanish', code: 'es-ES' }),
   native: languageSchema.default({ name: 'English', code: 'en-US' }),
@@ -25,6 +28,8 @@ export type Cue = { text: string; line: number; kind: 'target' | 'native'; start
 export type ServerEvent =
   | { type: 'session'; id: string; topic: string; plannerModel: string; liveModel: string }
   | { type: 'writer'; model: string }
+  | { type: 'music'; data: string; sampleRate: number; channels: number }
+  | { type: 'musicStatus'; state: 'connecting' | 'playing' | 'unavailable'; detail?: string }
   | { type: 'status'; state: string; detail?: string }
   | { type: 'context'; used: number; limit: number; cumulativeInput: number; cumulativeOutput: number }
   | { type: 'turn'; turn: number; startSample: number }
@@ -38,7 +43,7 @@ const playbackDiagnosticsSchema = z.object({ firstStartSeconds: z.number().nonne
 export type PlaybackDiagnostics = z.infer<typeof playbackDiagnosticsSchema>;
 export const clientMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('start'), settings: settingsSchema, keys: z.array(z.string().trim().min(10).max(256)).max(100).default([]) }),
-  z.object({ type: z.literal('progress'), playedSamples: z.number().int().nonnegative(), paused: z.boolean(), playbackRate: z.number().min(1).max(2).optional(), playback: playbackDiagnosticsSchema.optional() }),
+  z.object({ type: z.literal('progress'), playedSamples: z.number().int().nonnegative(), paused: z.boolean(), musicBufferedSeconds: z.number().min(0).max(120).optional(), playbackRate: z.number().min(1).max(2).optional(), playback: playbackDiagnosticsSchema.optional() }),
   z.object({ type: z.literal('stop') }),
 ]);
 export function linesFor(plan: Plan, settings: Settings): Line[] {

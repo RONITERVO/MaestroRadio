@@ -8,6 +8,10 @@ export class StreamPlayer {
   private pitch?: Awaited<ReturnType<typeof import('./pitch.ts')['createPitch']>>;
   private timeline: PlaybackTimeline;
   private completed = 0;
+  private mixer?: AudioWorkletNode;
+  private musicNext = 0;
+  private musicSources = new Set<AudioBufferSourceNode>();
+  private musicVolume = 0.6;
   stopped = false;
   paused = false;
   constructor(bufferMs: number, readonly context = new AudioContext({ latencyHint: 'playback' })) { this.timeline = new PlaybackTimeline(bufferMs); }
@@ -16,8 +20,35 @@ export class StreamPlayer {
   async unlock() {
     await this.context.resume();
     this.pitch = await (await import('./pitch.ts')).createPitch(this.context);
-    this.pitch.input.connect(this.context.destination);
+    const { default: mixerUrl } = await import('./mix-processor.ts?worker&url');
+    await this.context.audioWorklet.addModule(mixerUrl);
+    this.mixer = new AudioWorkletNode(this.context, 'maestro-radio-mix', { numberOfInputs: 2, numberOfOutputs: 1, outputChannelCount: [2] });
+    this.mixer.connect(this.context.destination);
+    this.pitch.input.connect(this.mixer, 0, 0);
+    this.setMusicVolume(this.musicVolume);
     this.pitch.setRate(this.rate, this.context.currentTime);
+  }
+  get musicBufferedSeconds() { return Math.max(0, this.musicNext - this.context.currentTime); }
+  setMusicVolume(value: number) { this.musicVolume = Math.max(0, Math.min(1, value)); this.mixer?.parameters.get('musicVolume')?.setTargetAtTime(this.musicVolume, this.context.currentTime, 0.1); }
+  addMusic(data: string, rate: number, channels: number) {
+    if (this.stopped || !this.mixer) return;
+    if (![44100, 48000].includes(rate) || channels !== 2) throw new Error('Unsupported music format');
+    const bytes = Uint8Array.from(atob(data), char => char.charCodeAt(0));
+    if (bytes.length % (channels * 2)) throw new Error('Invalid music PCM');
+    if (this.musicBufferedSeconds > 30) return;
+    const frames = bytes.length / (channels * 2);
+    if (!frames) return;
+    const view = new DataView(bytes.buffer);
+    const buffer = this.context.createBuffer(channels, frames, rate);
+    for (let c = 0; c < channels; c++) {
+      const target = buffer.getChannelData(c);
+      for (let f = 0; f < frames; f++) target[f] = view.getInt16((f * channels + c) * 2, true) / 32768;
+    }
+    const source = this.context.createBufferSource(); source.buffer = buffer; source.connect(this.mixer, 0, 1);
+    this.musicSources.add(source);
+    source.onended = () => { source.disconnect(); this.musicSources.delete(source); };
+    this.musicNext = Math.max(this.musicNext, this.context.currentTime + (this.musicNext ? 0.04 : 1.2));
+    source.start(this.musicNext); this.musicNext += buffer.duration;
   }
   add(data: string, startSample: number) {
     if (this.stopped) return;
@@ -74,6 +105,8 @@ export class StreamPlayer {
     this.stopped = true;
     for (const source of this.sources) { try { source.stop(); } catch { /* Already ended. */ } }
     this.sources.clear();
+    for (const source of this.musicSources) { try { source.stop(); } catch {} }
+    this.musicSources.clear(); this.mixer?.disconnect();
     this.buffers.clear(); this.pitch?.stop();
     await this.context.close();
   }

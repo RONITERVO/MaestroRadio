@@ -1,6 +1,6 @@
 {
   "name": "maestro-radio",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -17,7 +17,10 @@
     "bench:writer": "tsx scripts/bench-writer.ts",
     "bench:models": "tsx scripts/bench-models.ts",
     "replay": "tsx scripts/replay.ts",
-    "experiment:voice": "tsx scripts/voice-experiment.ts"
+    "experiment:voice": "tsx scripts/voice-experiment.ts",
+    "smoke:music": "tsx scripts/smoke-music.ts",
+    "android:prompts": "tsx scripts/sync-android-prompts.ts",
+    "android:install": "tsx scripts/install-android.ts"
   },
   "dependencies": {
     "@google/genai": "^2.13.0",

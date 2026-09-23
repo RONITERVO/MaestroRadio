@@ -1,5 +1,20 @@
 # Verification — 2026-09-23
 
+## Native Kotlin Android, Lyria and desktop launch
+
+Built a native Android application (no WebView or desktop connection), installed over ADB on the connected Honor DNP-NX9 / Android 16, and exercised real Google requests on the phone. The final installed package is `com.ronit.maestroradio`, version 0.2.0, a debug/test build. Keys were provisioned privately, encrypted using Android Keystore, and the plaintext import was deleted; APK and repository contain no credentials.
+
+- **60 Node tests passed**, TypeScript/Vite production build passed.
+- **9 Kotlin unit tests passed**: actual-transcript alignment, immutable timestamps, missing translations, env import, key cooldown isolation, cancellation, complete-history fallback including thought signatures, and stopping before context overflow. Android debug build and lint passed (remaining warnings are API deprecations, dependency updates and UI localization).
+- Lyria smoke generated **12 seconds of 48 kHz stereo PCM**, first chunk **3.337 s** after starting. Live MIME was `audio/l16;rate=48000;channels=2`; byte-order analysis confirmed the provider's PCM is little-endian. Quality mode, guidance 4.5, temperature 1.0 were accepted.
+- Native sustained Spanish/English test: **20 accepted voice turns**, **474 s generated**, **364.758 s actually advanced on the AudioTrack playback clock**, first speech **9.469 s**, **zero detected pipeline underruns**. Speed changed from 1.25× to 2×. All accepted turns had 100% transcript coverage; one rejected attempt (72.3%) was recovered privately. Additional speculative work was discarded on stop. Evidence: ignored `test-results/android/` and the phone's private episode `e548483a-3727-4c2e-995c-2c4c1919496e`.
+- Lyria remained active throughout the native run, with a peak queued buffer of **3.2 s**. Backgrounding the activity continued playback. A screen-off interval advanced **83.853 s** of source speech at 2×. Lock-screen media pause held both the speech position and queued music constant across observations; End removed the foreground service. The final updated APK was reinstalled and opened on the setup screen.
+- Initial native trial correctly stopped after the voice omitted content through three attempts. Later testing added random Live seeds and the desktop-style final language-marker retry; this does not establish that either change alone caused the successful run.
+- Browser live music and narration played together, and pause held `playedSamples` and the music queue constant while changing speed from 2× to 1.5×. That particular 114-second generated episode reported two speech scheduler underruns, **6.864 s total / 6.299 s maximum**, and ended on the writer's repetition guard. Music does not guarantee gap-free speech generation. The mobile browser layout had no horizontal overflow at 390 px.
+- The Windows desktop/Start menu shortcut was installed with **Ctrl+Alt+M** and verified by stopping the development server, launching through the script, and checking the production server's health and built client at port 4317. Android build reports are excluded from Vite's watcher to avoid reloading a listening browser during APK builds.
+
+These are finite device/browser checks. AudioTrack and Web Audio clocks and provider transcripts are the evidence; no independent acoustic transcription, hardware loopback, exhaustive language evaluation, or million-token episode was performed. The live mix uses the DrawnExplainers compression settings and reserved headroom, not its offline LUFS mastering pass.
+
 ## Flash writer defaults and model fallbacks
 
 The default writer is now **gemini-2.5-flash, thinking disabled**. The ordered fallbacks are **gemini-3-flash-preview, minimal thinking**, then **gemini-2.5-flash-lite, thinking disabled**. Each model attempt has a 12-second default deadline, including key rotation and token counting. The current successful route remains active for the episode. Model switches appear in Settings and the archive; the complete ledger and original response signatures are retained and counted against the replacement's actual context limit.
