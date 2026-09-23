@@ -30,10 +30,12 @@ function savePreferences() {
   try { localStorage.setItem('maestro-radio-preferences', JSON.stringify({ ...Object.fromEntries(preferences.map(id => [id, $<HTMLSelectElement>(id).value])), expressive: $<HTMLInputElement>('expressive').checked })); } catch { /* Private browsing. */ }
 }
 let configured = false;
+let modelInfo = { writer: '', fallbacks: [] as string[], voice: '', keys: '' };
+function showModels() { $('model-info').textContent = `WRITER ${modelInfo.writer}\nFALLBACKS ${modelInfo.fallbacks.join(' → ') || 'none'}\nVOICE ${modelInfo.voice}\nSERVER ${modelInfo.keys}`; }
 void fetch('/api/config').then(r => r.json()).then(config => {
   configured = config.configured;
   $('key-note').textContent = configured ? 'Server keys ready. Settle in and listen.' : 'Add your Gemini key in Settings to begin.';
-  $('model-info').textContent = `WRITER ${config.plannerModel}\nVOICE ${config.liveModel}\nSERVER ${config.plannerKeys} writer keys · ${config.liveKeys} voice keys`;
+  modelInfo = { writer: config.plannerModel, fallbacks: config.plannerFallbackModels ?? [], voice: config.liveModel, keys: `${config.plannerKeys} writer keys · ${config.liveKeys} voice keys` }; showModels();
 }).catch(() => notice('The local server is unavailable.'));
 const dialog = $<HTMLDialogElement>('settings-dialog');
 $('settings-button').onclick = () => dialog.showModal();
@@ -145,7 +147,8 @@ function complete() {
 function handle(event: ServerEvent) {
   if (!active || !player) return;
   switch (event.type) {
-    case 'session': episodeId = event.id; $('episode-topic').textContent = event.topic; break;
+    case 'session': episodeId = event.id; $('episode-topic').textContent = event.topic; modelInfo.writer = event.plannerModel; showModels(); break;
+    case 'writer': modelInfo.writer = event.model; showModels(); break;
     case 'status': if (!player.paused) setStatus(event.state === 'planning' ? 'Following a thought' : 'On air'); break;
     case 'context': {
       const percent = Math.min(100, event.used / event.limit * 100);

@@ -24,6 +24,7 @@ export type Line = { text: string; code: string; kind: 'target' | 'native' };
 export type Cue = { text: string; line: number; kind: 'target' | 'native'; startSample: number; endSample: number; observedAtSample: number };
 export type ServerEvent =
   | { type: 'session'; id: string; topic: string; plannerModel: string; liveModel: string }
+  | { type: 'writer'; model: string }
   | { type: 'status'; state: string; detail?: string }
   | { type: 'context'; used: number; limit: number; cumulativeInput: number; cumulativeOutput: number }
   | { type: 'turn'; turn: number; startSample: number }

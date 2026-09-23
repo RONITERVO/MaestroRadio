@@ -1,13 +1,24 @@
-import { GoogleGenAI, ThinkingLevel, type Content } from '@google/genai';
+import { GoogleGenAI, type Content } from '@google/genai';
 import { z } from 'zod';
 import { planSchema, type Plan, type Settings } from '../shared/protocol.ts';
-import { KeyPool, PublicError } from './keys.ts';
+import { KeyPool, PublicError, KeysUnavailable, errorStatus, safeError } from './keys.ts';
 import { writerInstruction } from './prompts.ts';
 import { countFullRequest } from './tokens.ts';
 import { languageReason } from './languages.ts';
 import { stripVoiceTags, hasVoiceTags, invalidVoiceTag } from '../shared/voice-tags.ts';
+import { writerThinking } from './writer-models.ts';
 
 export class ContextFull extends PublicError {}
+export type PlannerRouting = { fallbacks?: string[]; timeoutMs?: number; onSwitch?: (change: { from: string; to: string; reason: string }) => void };
+function abortable<T>(request: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener('abort', abort, { once: true });
+    request.then(value => { signal.removeEventListener('abort', abort); signal.aborted ? reject(signal.reason) : resolve(value); },
+      error => { signal.removeEventListener('abort', abort); reject(error); });
+    if (signal.aborted) abort();
+  });
+}
 export function fingerprint(text: string) { return stripVoiceTags(text).normalize('NFKC').toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim(); }
 export function repetitionReason(plan: Plan, previous: Plan[]): string | null {
   const facts = new Set(previous.flatMap(p => p.newFacts.map(fingerprint)));
@@ -35,30 +46,69 @@ export class Planner {
   cumulativeInput = 0;
   cumulativeOutput = 0;
   readonly system: string;
-  constructor(readonly model: string, readonly pool: KeyPool, private settings: Settings, readonly ceiling: number,
-    private client = (key: string) => new GoogleGenAI({ apiKey: key }), private counter = countFullRequest) {
-    this.pool = pool.forModel(model);
+  private models: string[];
+  private limits = new Map<string, number>();
+  constructor(public model: string, private keys: KeyPool, private settings: Settings, readonly ceiling: number,
+    private client = (key: string) => new GoogleGenAI({ apiKey: key }), private counter = countFullRequest, private routing: PlannerRouting = {}) {
+    this.models = [...new Set([model, ...(routing.fallbacks ?? [])])];
     this.system = writerInstruction(settings);
   }
+  get pool() { return this.keys.forModel(this.model); }
+  private async modelLimit(model: string, key: string, signal: AbortSignal) {
+    let limit = this.limits.get(model);
+    if (!limit) {
+      const metadata = await this.client(key).models.get({ model, config: { abortSignal: signal, httpOptions: { timeout: 30_000 } } });
+      if (!metadata.inputTokenLimit) throw new PublicError('Gemini did not report the planner context limit. Refusing to discard episode history.');
+      limit = Math.min(metadata.inputTokenLimit, this.ceiling); this.limits.set(model, limit);
+    }
+    return limit;
+  }
+  private async withModels<T>(operation: (model: string, key: string, signal: AbortSignal) => Promise<T>, signal: AbortSignal): Promise<T> {
+    let lastError: unknown;
+    const order = [this.model, ...this.models.filter(model => model !== this.model)];
+    for (const model of order) {
+      signal.throwIfAborted();
+      const deadline = AbortSignal.timeout(this.routing.timeoutMs ?? 60_000);
+      const attemptSignal = AbortSignal.any([signal, deadline]);
+      try {
+        const result = await abortable(this.keys.forModel(model).run(key => operation(model, key, attemptSignal), attemptSignal, () => true, order.length > 1 ? 0 : 60_000), attemptSignal);
+        if (this.model !== model) {
+          const from = this.model; this.model = model;
+          this.routing.onSwitch?.({ from, to: model, reason: lastError ? safeError(lastError) : 'Model availability changed.' });
+        }
+        this.limit = this.limits.get(model)!;
+        return result;
+      } catch (error) {
+        signal.throwIfAborted();
+        if (error instanceof ContextFull) throw error;
+        if (deadline.aborted) lastError = new PublicError(`The writer ${model} exceeded its response deadline.`);
+        else if (error instanceof KeysUnavailable || [401, 403, 404, 429, 500, 502, 503, 504].includes(errorStatus(error))) lastError = error;
+        else throw error;
+      }
+    }
+    throw lastError;
+  }
   async initialize(signal: AbortSignal) {
-    const metadata = await this.pool.run(key => this.client(key).models.get({ model: this.model, config: { abortSignal: signal, httpOptions: { timeout: 30_000 } } }), signal);
-    if (!metadata.inputTokenLimit) throw new PublicError('Gemini did not report the planner context limit. Refusing to discard episode history.');
-    this.limit = Math.min(metadata.inputTokenLimit, this.ceiling);
+    await this.withModels((model, key, attemptSignal) => this.modelLimit(model, key, attemptSignal), signal);
   }
   observe(text: string) { this.history.push({ role: 'user', parts: [{ text }] }); }
   async next(signal: AbortSignal, onContext: () => void): Promise<Plan> {
     this.observe(this.plans.length ? 'Continue with the next fresh passage. Use all preceding plans and narration receipts. The most recent planned passage may still be speaking; continue after its script without repeating it.' : 'Begin directly in the requested style, or with a specific fact if none is specified. Keep the first target sentence especially concise, about 8–12 words, with a compact faithful translation. Then develop that thought in the remaining pairs.');
     for (let repair = 0; repair < 3; repair++) {
-      const response = await this.pool.run(async key => {
+      // All model/key attempts use the same complete snapshot, with provider signatures intact.
+      const contents = structuredClone(this.history);
+      const response = await this.withModels(async (model, key, attemptSignal) => {
         const ai = this.client(key);
-        // A voice receipt can arrive during this request. Count and generate from the SAME immutable snapshot.
-        const contents = structuredClone(this.history);
-        this.used = await this.counter({ key, model: this.model, contents, system: this.system, signal });
+        const limit = await this.modelLimit(model, key, attemptSignal);
+        attemptSignal.throwIfAborted();
+        const used = await this.counter({ key, model, contents, system: this.system, signal: attemptSignal });
+        attemptSignal.throwIfAborted();
+        this.limit = limit; this.used = used;
         onContext();
         // Reserve output plus schema/serialization overhead and the final narration receipt.
         if (this.used + 8192 >= this.limit) throw new ContextFull('The episode reached its full-memory context limit.');
         return ai.models.generateContent({
-          model: this.model, contents,
+          model, contents,
           config: { systemInstruction: this.system, responseMimeType: 'application/json', responseJsonSchema: z.toJSONSchema(planSchema.extend({
             angle: planSchema.shape.angle.describe('A short title for the NEW development in this passage. Do not copy the requested style or overall topic.'),
             pairs: z.array(z.object({
@@ -66,9 +116,8 @@ export class Planner {
               native: z.string().min(1).max(400).describe(`Faithful translation into ${this.settings.native.name}, spoken SECOND.`),
             })).min(1).max(4),
           })),
-            ...(this.model.startsWith('gemini-2.5-flash') ? { thinkingConfig: { thinkingBudget: 0 } }
-              : this.model.includes('flash-lite') ? { thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL } } : {}),
-            temperature: 0.8, maxOutputTokens: 2048, abortSignal: signal, httpOptions: { timeout: 60_000 } },
+            thinkingConfig: writerThinking(model),
+            temperature: 0.8, maxOutputTokens: 2048, abortSignal: attemptSignal, httpOptions: { timeout: this.routing.timeoutMs ?? 60_000 } },
         });
       }, signal);
       this.cumulativeInput += response.usageMetadata?.promptTokenCount ?? this.used;

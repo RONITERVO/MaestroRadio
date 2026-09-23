@@ -15,6 +15,7 @@
     "smoke": "tsx scripts/smoke.ts",
     "test:soak": "tsx scripts/soak.ts",
     "bench:writer": "tsx scripts/bench-writer.ts",
+    "bench:models": "tsx scripts/bench-models.ts",
     "replay": "tsx scripts/replay.ts",
     "experiment:voice": "tsx scripts/voice-experiment.ts"
   },

@@ -5,6 +5,7 @@ import { Episode } from '../server/episode.ts';
 import { envKeys, KeyPool } from '../server/keys.ts';
 import { settingsSchema } from '../shared/protocol.ts';
 import { PlaybackTimeline } from '../shared/playback-timeline.ts';
+import { writerModels } from '../server/writer-models.ts';
 
 dotenv.config({ path: ['.env.local', '.env'], quiet: true });
 const environment = process.env.GEMINI_KEYS_FILE ? { ...dotenv.parse(readFileSync(process.env.GEMINI_KEYS_FILE)), ...process.env } : process.env;
@@ -26,7 +27,8 @@ let turns = 0;
 const boundaries: number[] = [];
 const coverage: number[] = [];
 const arrivals: { at: number; sample: number; samples: number; turn: number }[] = [];
-const episode = new Episode(settings, { plannerModel: process.env.PLANNER_MODEL || 'gemini-2.5-flash-lite',
+const writer = writerModels(process.env);
+const episode = new Episode(settings, { plannerModel: writer.model, plannerFallbackModels: writer.fallbacks, plannerTimeoutMs: writer.timeoutMs,
   liveModel: process.env.LIVE_MODEL || 'gemini-2.5-flash-native-audio-preview-12-2025', contextLimit: 1048576,
   dataDir: resolve('test-results/soak'), plannerPool: pool, livePool: pool }, event => {
   if (event.type === 'audio') {

@@ -1,5 +1,28 @@
 # Verification — 2026-09-23
 
+## Flash writer defaults and model fallbacks
+
+The default writer is now **gemini-2.5-flash, thinking disabled**. The ordered fallbacks are **gemini-3-flash-preview, minimal thinking**, then **gemini-2.5-flash-lite, thinking disabled**. Each model attempt has a 12-second default deadline, including key rotation and token counting. The current successful route remains active for the episode. Model switches appear in Settings and the archive; the complete ledger and original response signatures are retained and counted against the replacement's actual context limit.
+
+The comparison used the real planner, two consecutive passages per case, and factual Spanish/English plus expressive Spanish/Finnish fiction. Failed cases are retained alongside successes. Results are small account-specific samples, not general model benchmarks:
+
+| Writer / thinking | Observed result | Decision |
+| --- | --- | --- |
+| 2.5 Flash / off | Six accepted passages in 2.181–2.713 s across two projects; two other project keys returned 404 | Primary; key rotation handles unavailable projects |
+| 3 Flash preview / minimal | One passage at 2.979 s; another at 63.592 s; subsequent passages hit request deadlines | Bounded fallback, never an unlimited wait |
+| 2.5 Flash-Lite / off | Earlier fixed-prompt sample 1.718 s; all four current project keys now report daily exhaustion | Emergency fallback when quota is available |
+| 3.1 Flash-Lite / minimal | Service failures (503) on all four tested project keys | Configurable, excluded from defaults |
+| 3.8 Flash / low | Service failures (503) on all four tested project keys | Configurable, excluded from defaults |
+| 3.5 Flash-Lite / minimal | Prior completed samples 35.206–35.590 s; both new real-planner cases hit request deadlines | Configurable, excluded from defaults |
+
+The supplied AI Studio screenshot shows 500 RPD / 15 RPM for both 3.1 and 3.5 Flash-Lite in that project, and 20 RPD for the listed full Flash models. These are that project's displayed allowances, not inferred limits for all keys. Higher allowance alone did not establish usable latency in this comparison. Comparison evidence: ignored `test-results/model-comparison-1790180005106`, `1790180085566`, `1790180240115`, and `1790180316761` (the latter three have the same directory prefix).
+
+The full pipeline was then tested with 2.5 Flash writing an expressive Spanish/Finnish folk tale at **2×**. All three plans / seven voice turns completed, producing **130.68 source seconds**; first scheduled playback was **8.179 s**. It recorded **one 20.393-second underrun**. The third voice turn's first private render was rejected for transcript coverage and regenerated, taking 27.444 seconds across both attempts; subsequent audio delivery could not recover the already-heard gap. This is a remaining Live transcript-repair/startup-reserve limit, not evidence of gap-free realtime playback. Six turns had 100% transcript coverage and one had 89.36%; planned captions were never substituted. Archive: `test-results/soak/a9a76f09-228b-4db8-b771-c61a484a5dca`.
+
+A forced live fallback test began on daily-exhausted **2.5 Flash-Lite** and automatically switched to **2.5 Flash**. It completed two plans / five voice turns, generated **84.12 seconds** of audio at 1× scheduling, and recorded **zero underruns and 100% transcript coverage for every turn**. The switch and final active writer are archived in `test-results/soak/a02a8b8a-a5e0-469c-a362-5390886d161b`. This scheduler soak stops after generation completes; earlier source audio was played in real time, with the final queued tail not independently heard by the runner. Spot checking that bicycle script also found a translation drift between “lean” and “steer”; language and coverage checks do not prove semantic or factual accuracy.
+
+All **54 tests**, TypeScript checking and production build pass. New tests exercise model/key fallback with complete history and signatures, actual context limits after handoff, deadline/late-response handling, metadata access failures, cancellation, pinned-model configuration and invalid requests. Desktop/mobile Settings show the current writer and fallback list without horizontal overflow. The local app's `.env` uses the new primary and fallbacks; credentials remain unchanged and ignored.
+
 ## Independent-project key routing and a fresh 3.5 check
 
 All **47 tests** and the TypeScript/production build pass. New key-pool regressions cover reaching an available twelfth key immediately after eleven rate limits, separate writer/Live cooldowns, model-specific access failures, provider RetryInfo, bounded retry, cancellation during cooldown, idle-project preference under concurrency, and a late success not erasing a newer rate limit. Daily-quota tests cover reusing cooldown state across requests and Pacific-midnight resets through both daylight-saving transitions.

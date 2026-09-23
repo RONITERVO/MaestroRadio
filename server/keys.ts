@@ -57,7 +57,7 @@ export class KeyPool {
     if (!pool) { pool = new KeyPool(this.entries.map(entry => entry.key), this.now, this.wait); this.models.set(model, pool); }
     return pool;
   }
-  async run<T>(operation: (key: string) => Promise<T>, signal: AbortSignal, canRetry = () => true): Promise<T> {
+  async run<T>(operation: (key: string) => Promise<T>, signal: AbortSignal, canRetry = () => true, maxCooldownWaitMs = 60_000): Promise<T> {
     if (!this.entries.length) throw new Error('Add a Gemini key in settings or .env.');
     let lastError: unknown;
     let waited = 0, attempts = 0;
@@ -66,13 +66,13 @@ export class KeyPool {
     while (attempts < this.entries.length + 2) {
       signal.throwIfAborted();
       const usable = this.entries.filter(e => !e.disabled);
-      if (!usable.length) throw lastError ?? new Error('All configured keys were rejected.');
+      if (!usable.length) throw lastError ?? new KeysUnavailable('No configured key has access to this model.', 403);
       const ordered = this.entries.slice(this.cursor).concat(this.entries.slice(0, this.cursor));
       const ready = ordered.filter(e => !e.disabled && e.until <= this.now());
       if (!ready.length) {
         const waitMs = Math.max(1, Math.min(...usable.map(e => e.until)) - this.now());
         // Keep the request bounded even if Google asks for a daily-scale cooldown.
-        if (waited + waitMs > 60_000) {
+        if (waited + waitMs > maxCooldownWaitMs) {
           if (usable.every(e => e.dailyUntil > this.now())) throw new KeysUnavailable('All configured keys with access to this model have reached their daily quota. Try after midnight Pacific, or add a key from another project.');
           throw lastError ?? new KeysUnavailable('Every configured key for this model is cooling down. Try again shortly or add a key from another project.');
         }
@@ -122,4 +122,6 @@ export function safeError(error: unknown): string {
   return error instanceof PublicError ? error.message : 'The stream stopped unexpectedly. Your episode log is saved locally.';
 }
 export class PublicError extends Error {}
-class KeysUnavailable extends PublicError {}
+export class KeysUnavailable extends PublicError {
+  constructor(message: string, readonly status = 429) { super(message); }
+}
