@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#080909" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23080909'/%3E%3Cpath d='M8 12v8m5-13v18m6-15v12m5-8v4' stroke='%23d4e9bb' stroke-width='2'/%3E%3C/svg%3E" />
+    <meta name="description" content="An unfolding bilingual podcast. One thought, two languages." />
+    <title>Maestro Radio</title>
+  </head>
+  <body>
+    <div id="app">
+      <header>
+        <a class="brand" href="/" aria-label="Maestro Radio home"><span class="brand-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>MAESTRO <span>RADIO</span></a>
+        <button id="settings-button" class="quiet-button">Settings <span aria-hidden="true">↗</span></button>
+      </header>
+      <main>
+        <section id="setup" class="setup">
+          <div class="eyebrow"><span class="live-dot"></span> ONE THOUGHT. TWO LANGUAGES.</div>
+          <h1>Follow a thought.<br /><em>Find the words.</em></h1>
+          <p class="intro">A podcast that keeps unfolding.<br />Listen in a new language, one sentence at a time.</p>
+          <form id="start-form">
+            <label class="field-label" for="topic">WHERE SHALL WE BEGIN?</label>
+            <div class="topic-field"><input id="topic" name="topic" maxlength="2000" placeholder="The secret life of cities, deep oceans, anything…" autocomplete="off" /><button type="button" id="random" title="Choose a random starting point" aria-label="Choose a random starting point">↝</button></div>
+            <div class="language-row">
+              <label><span class="field-label">I’M LEARNING</span><select id="target" aria-label="Target language"></select></label>
+              <span class="language-arrow" aria-hidden="true">→</span>
+              <label><span class="field-label">TRANSLATE INTO</span><select id="native" aria-label="Translation language"></select></label>
+              <label class="level-field"><span class="field-label">LEVEL</span><select id="level" aria-label="Learning level"><option>A1</option><option>A2</option><option selected>B1</option><option>B2</option><option>C1</option></select></label>
+            </div>
+            <button class="begin" type="submit" id="begin">Begin listening <span aria-hidden="true">↗</span></button>
+            <p class="start-note" id="key-note">Your curiosity. Your pace. Your API key.</p>
+          </form>
+          <div class="setup-foot"><span>01</span><span>TARGET SENTENCE</span><i></i><span>02</span><span>NATIVE TRANSLATION</span></div>
+        </section>
+        <section id="listening" class="listening" hidden>
+          <div class="episode-heading"><span class="live-dot"></span><span id="episode-topic"></span></div>
+          <div id="transcript" role="log" aria-label="Spoken transcript" aria-live="off"></div>
+          <div id="waiting" class="waiting"><span></span><span></span><span></span></div>
+        </section>
+      </main>
+      <div id="notice" class="notice" role="status" hidden></div>
+      <footer id="idle-footer"><span>LEARNING, WITHOUT THE LESSON.</span><span>BYOK · LOCAL FIRST</span></footer>
+      <div id="transport" class="transport" hidden>
+        <div class="transport-inner"><button id="pause" aria-label="Pause playback">Ⅱ</button><div class="playing-meta"><span id="status">Connecting</span><span id="elapsed">00:00</span></div><div class="context-meter" title="Complete episode memory"><span id="context-label">MEMORY</span><div><i id="context-fill"></i></div></div><button id="export" class="quiet-button" title="Export the spoken transcript">Save text</button><button id="stop" class="quiet-button">End <span aria-hidden="true">■</span></button></div>
+      </div>
+      <dialog id="settings-dialog">
+        <form id="settings-form" method="dialog">
+          <div class="dialog-title"><h2>Make it yours.</h2><button class="quiet-button" value="close" aria-label="Close settings">✕</button></div>
+          <label class="field-label" for="keys">GEMINI API KEYS</label>
+          <textarea id="keys" rows="4" placeholder="Paste one key per line, or use your server’s .env" autocomplete="off" spellcheck="false"></textarea>
+          <p class="help">Keys stay in this tab’s memory and are sent to your local server. They are never saved in the browser or episode files. Pasted keys replace the server key pool for this episode.</p>
+          <div class="settings-grid"><label><span class="field-label">VOICE</span><select id="voice"><option>Kore</option><option>Puck</option><option>Charon</option><option>Fenrir</option><option>Aoede</option><option>Leda</option><option>Orus</option><option>Zephyr</option></select></label><label><span class="field-label">PLAYBACK BUFFER</span><select id="buffer"><option value="700">0.7 seconds</option><option value="1400" selected>1.4 seconds</option><option value="2500">2.5 seconds</option><option value="4000">4 seconds</option></select></label></div>
+          <p class="help">A little breathing room lets the transcript arrive before you hear it. Settings apply to your next episode.</p>
+          <div id="model-info" class="model-info"></div>
+          <button class="begin" value="save">Done <span aria-hidden="true">↗</span></button>
+        </form>
+      </dialog>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

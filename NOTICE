@@ -1,0 +1,10 @@
+Maestro Radio
+
+The TTS system instruction in server/prompts.ts is adapted from MaestroTutor:
+https://github.com/RONITERVO/MaestroTutor
+Copyright 2025 Roni Tervo
+Licensed under the Apache License, Version 2.0.
+
+Changes: silent language-code metadata, short bilingual passage scripts, and
+separate full-history writer orchestration. The original TTS implementation
+has not been copied wholesale.
