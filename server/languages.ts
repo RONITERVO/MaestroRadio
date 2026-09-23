@@ -1,5 +1,6 @@
 import { francAll } from 'franc';
 import type { Plan, Settings } from '../shared/protocol.ts';
+import { stripVoiceTags } from '../shared/voice-tags.ts';
 
 const codes: Record<string, string> = { es: 'spa', en: 'eng', fi: 'fin', fr: 'fra', de: 'deu', it: 'ita', pt: 'por',
   sv: 'swe', nl: 'nld', pl: 'pol', tr: 'tur', el: 'ell', ru: 'rus', uk: 'ukr', ja: 'jpn', ko: 'kor',
@@ -10,7 +11,7 @@ export function languageReason(plan: Plan, settings: Settings): string | null {
   const target = codes[settings.target.code.split('-')[0]], native = codes[settings.native.code.split('-')[0]];
   if (!target || !native || target === native) return null;
   for (const field of ['target', 'native'] as const) {
-    const text = plan.pairs.map(pair => pair[field]).join(' ');
+    const text = stripVoiceTags(plan.pairs.map(pair => pair[field]).join(' '));
     if (text.length < 60) continue;
     const expected = field === 'target' ? target : native;
     const ranked = francAll(text, { only: [target, native], minLength: 60 });

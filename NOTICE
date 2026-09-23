@@ -8,3 +8,14 @@ Licensed under the Apache License, Version 2.0.
 Changes: silent language-code metadata, short bilingual passage scripts, and
 separate full-history writer orchestration. The original TTS implementation
 has not been copied wholesale.
+
+The vocal direction examples in server/prompts.ts and the tag vocabulary in
+shared/voice-tags.ts are adapted from MaestroTutor's VOICE_TAG_PERSONA_GUIDELINES,
+copyright 2025 Roni Tervo, under Apache-2.0.
+
+Pitch-preserving playback uses SoundTouchJS 2.1.1 packages, copyright Steve
+'Cutter' Blades, under Mozilla Public License 2.0. Upstream source and notices:
+https://github.com/cutterbl/SoundTouchJS
+License: https://mozilla.org/MPL/2.0/
+The dependency sources are available through npm and the locked package versions.
+The unmodified SoundTouchJS modules are bundled into the audio worklet.

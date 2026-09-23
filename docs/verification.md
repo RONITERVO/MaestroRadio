@@ -1,5 +1,19 @@
 # Verification — 2026-09-23
 
+## Playback speed, storytelling style and vocal directions
+
+TypeScript check, production build and **38 tests** pass; the production dependency audit reports zero vulnerabilities. Added regressions cover source-sample mapping across speed changes, changing speed while paused, retaining the same wall-clock production reserve at 2×, split vocal tags in actual transcripts, repetition checks that ignore delivery tags, and fresh story events under a recurring title.
+
+Browser rendering of a 440 Hz reference tone through the real SoundTouch worklet preserved **440 Hz at 1×, 1.5× and 2×**. A two-second source tone lasted approximately 2.00, 1.33 and 0.99 seconds respectively. The processor measured 99–141 ms of buffering delay, which is subtracted from the caption clock. These measurements establish pitch/duration behavior; they are not a subjective assessment of voice quality.
+
+A production-browser replay of the existing Spanish/Finnish archive `5d51036e-ecb7-4d5d-9b94-059a44c5e170` played all **334.04 source seconds / 15 turns**, with **zero scheduling underruns, zero gap milliseconds and zero stream errors**. The run changed 1× → 2×, paused, changed to 1.5× while paused, then resumed to completion. A three-second sample at 2× advanced the audible source clock at **2.003×** wall time. Captions stayed frozen during pause and after completion. A separate rapid-change check exercised 2× → 1.25× → 1.75× → 1× and End without errors. Mobile setup and transport checks at 390 × 844 had no horizontal overflow. Replay uses recorded PCM and actual captions; it does not test live provider throughput.
+
+The Flash-Lite 2.5 writer produced a requested second-person comic folk tale with matching Spanish/English vocal directions. This exposed an overstrict repetition check: several fresh passages reused the whole story/style as their angle. An angle-only repeat no longer rejects fresh events; repeated facts and exact/near-identical spoken sentences remain rejected.
+
+A finite Live A/B reused the writer's `[curious]` fox sentence and English translation. Both versions had **100% per-line transcript coverage**. Neutral generated 11.60 seconds of audio in 8.883 seconds; expressive generated 11.48 seconds in 7.348 seconds. The expressive output transcript included bracketed metadata, which the caption adapter removes. Local audio and raw evidence are in `test-results/voice-experiment-1790178526307/`. Requests are stochastic, and transcript coverage alone cannot establish perceived emotion or independently prove what the waveform contains; the two WAVs are provided for listening.
+
+Earlier live story attempts encountered a missing native-language transcript (caught before publication) and writer quota failures. A later browser story accepted two voice turns with full coverage before hitting quota. The final three-batch, expressive 2× soak (`cd0cc18c-7ac9-4d84-b5c0-ed1a61a2d8e3`) stopped at the writer quota with no audio. **Sustained live generation at 2× is therefore unverified on this account.** The speed-aware reserve, player replay and separate tagged Live request passed; those do not remove this provider limitation.
+
 ## Continuity refinement
 
 TypeScript check, production build, **32 tests**, and the production dependency audit pass (zero reported vulnerabilities). New tests exercise ordered concurrent readers, discarded private attempts, bounded queues, language reversal, generation completion, output-clock diagnostics, and an observed 31-second delivery stall.

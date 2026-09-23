@@ -14,10 +14,14 @@
     "test": "tsx --test tests/*.test.ts",
     "smoke": "tsx scripts/smoke.ts",
     "test:soak": "tsx scripts/soak.ts",
-    "bench:writer": "tsx scripts/bench-writer.ts"
+    "bench:writer": "tsx scripts/bench-writer.ts",
+    "replay": "tsx scripts/replay.ts",
+    "experiment:voice": "tsx scripts/voice-experiment.ts"
   },
   "dependencies": {
     "@google/genai": "^2.13.0",
+    "@soundtouchjs/interpolation-strategy-lanczos": "^2.1.1",
+    "@soundtouchjs/worklet-base": "^2.1.1",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "franc": "^6.2.0",

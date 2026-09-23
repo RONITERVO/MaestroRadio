@@ -28,6 +28,9 @@ Long full-context sessions incur increasing input costs. Explicit prompt caching
 
 ## References inspected on 2026-09-23
 
+- [SoundTouchJS](https://github.com/cutterbl/SoundTouchJS), npm 2.1.1 (MPL-2.0): unmodified worklet base/core and Lanczos interpolation strategy. Web Audio source playback rate changes duration; the worklet compensates the pitch shift. Original PCM and transcript sample coordinates remain unchanged. A continuous silent input keeps the processor warm and flushes its tail; inserted buffering frames are measured for the audible caption clock.
+- MaestroTutor's `src/core/config/prompts.ts`, `VOICE_TAG_PERSONA_GUIDELINES`: audible-only inline directions, placement before a phrase for delivery or after it for a reaction, sparse use, and examples. Radio's non-Live writer supplies these tags only when requested; Live is explicitly told to perform them without speaking their names. Known tags are stripped from actual output captions and expected-word coverage. The raw transcript remains archived.
+
 - [MaestroTutor](https://github.com/RONITERVO/MaestroTutor), local checkout commit `36d338243411656f7f085eaeaed172253ef3d780`: `src/core-sdk/media/triggeredTts.ts`, `src/features/speech/services/geminiLiveTts.ts`, `public/gemini-models.json`. The voice instruction is adapted from its Apache-2.0 prompt. Actual words are matched forward to locate target/native rows; the plan is never used as substitute captions.
 - [Spanish Quick Apps](https://github.com/RONITERVO/Spanish-Quick-Apps), local checkout commit `21a6ff75df64412c269489f177e8ddbad837c044`: `learning-narration.js` and `docs/syncvoice-production.md`. Used the audio-clock-driven character-reveal principle.
 - Local SyncVoice: `lib/client/gemini-tts.ts`, `agent/gemini-tts.mjs`, and `app/tts-studio.tsx`. Used observed sample positions, without a final-duration normalization pass or scripted-caption fallback.

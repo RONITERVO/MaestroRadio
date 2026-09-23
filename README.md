@@ -58,6 +58,9 @@ Pool behavior: deduplication, rotation, invalid-key quarantine, exponential cool
 ## Listening
 
 - Choose target and native languages, level, topic, and optionally voice/buffer settings.
+- Use **Style & expression** to describe the episode in your own words: a folk tale, a comedy, the listener as the main character, or another approach. Leave it blank for the usual conversational podcast. Style applies to the next episode.
+- Optionally enable **Expressive voice**. The writer adds sparse delivery cues such as curiosity, whispers, or a chuckle, using MaestroTutor-style placement examples. The narrator performs those cues; captions omit the bracketed instructions. This is an experimental model-guided performance, not a guaranteed emotion control.
+- Change playback speed from **1× to 2×** in the listening bar or Settings, including while paused. Pitch is preserved, and transcript timing follows the changed audio speed. Your speed and style preferences are saved locally.
 - The ↝ button starts a randomly selected topic; an empty request does the same.
 - Pause suspends the audio clock and transcript together. In-flight passages may finish generating, but the backend stops starting additional voice turns.
 - End cancels the active work and scheduled audio immediately.
@@ -88,11 +91,11 @@ Listener request + language pair
      playback progress and pause --------> bounded production
 ```
 
-The writer returns structured pairs, a concrete angle, new facts, and a next-topic thread. Explicit field descriptions and a local language check catch clear target/native reversals. Validation also rejects malformed passages, exact duplicate facts/angles/sentences, and near-identical sentences, with at most three drafts. A writer batch has up to four pairs. The first two voice turns each have one pair and begin generating together; later turns have at most two. The Live instruction never specifies a line count. Both languages are spoken in the **same turn and voice**.
+The writer returns structured pairs, a concrete angle, new facts, and a next-topic thread. Explicit field descriptions and a local language check catch clear target/native reversals. Validation also rejects malformed passages, exact duplicate facts/sentences, and near-identical sentences, with at most three drafts. A recurring passage title alone does not reject fresh story events. Vocal tags are excluded from repetition and language checks. A writer batch has up to four pairs. The first two voice turns each have one pair and begin generating together; later turns have at most two. The Live instruction never specifies a line count. Both languages are spoken in the **same turn and voice**.
 
 Writing runs independently into a single-entry queue. The writer knows the latest planned script may still be speaking. Accepted narration receipts enter the permanent ledger; they may reach a later request if writing is already in flight. Every request uses an immutable snapshot so its token count and generation agree.
 
-The backend starts a new voice turn only when produced-but-unplayed audio is below 45 seconds and playback is not paused. At most two readers generate concurrently; those in-flight passages can take the reserve above the threshold. Completed passages are published strictly in script order. All audio and actual captions are checked before publication, with up to three voice attempts. Discarded attempts cannot duplicate heard speech. The normal script omits language-code markers, which caused transcript omissions in controlled tests; a final repair can try the marked format.
+The backend starts a new voice turn only when produced-but-unplayed audio is below 45 seconds of listening time and playback is not paused. At 2× this reserves up to 90 seconds of source audio before the threshold is reached. At most two readers generate concurrently; those in-flight passages can take the reserve above the threshold. Completed passages are published strictly in script order. All audio and actual captions are checked before publication, with up to three voice attempts. Discarded attempts cannot duplicate heard speech. The normal script omits language-code markers, which caused transcript omissions in controlled tests; a final repair can try the marked format.
 
 Each connection closes on `generationComplete`, after all output transcription has arrived, instead of waiting for Live's simulated playback to reach `turnComplete`. The browser owns the real playback clock. Fresh short connections keep Live's context small without compression or reconnection memory loss.
 
@@ -106,7 +109,7 @@ Gemini output transcription is evidence of generated speech, not independent aco
 
 The backend records the PCM sample cursor when each transcript fragment arrives. Characters within a fragment are paced between successive observed cursors. Text arriving before audio waits for real samples. Existing cues are never stretched to fit final audio duration, and planned words are never filled in. A forward text matcher places the observed words on the target/native lines; it does not rewrite them. Per-line and overall coverage checks reject significant departures or missing translations before playback.
 
-The browser maps absolute samples to scheduled AudioContext output time, including startup delay, pauses, and underrun gaps. It reveals Unicode characters progressively. This is approximate, low-latency synchronization. Exact word timestamps would require forced alignment of completed audio and more buffering.
+The browser maps absolute samples to scheduled AudioContext output time, including startup delay, pauses, underrun gaps, and speed changes. A pitch-compensating SoundTouchJS worklet keeps the narrator's pitch stable at faster speeds; its measured buffering delay is subtracted from the caption clock. Speed changes reschedule only unplayed samples, preserving historical timestamps. It reveals Unicode characters progressively. This is approximate, low-latency synchronization. Exact word timestamps would require forced alignment of completed audio and more buffering.
 
 ## Local archives
 
@@ -142,10 +145,26 @@ For a real-time test with playback backpressure, use the same scheduler as the b
 ```powershell
 npm run test:soak
 # Optional: SOAK_PLANS=6, SOAK_NATIVE=fi, SOAK_TOPIC=...
+# Also: SOAK_SPEED=2, SOAK_STYLE=..., SOAK_EXPRESSIVE=1
 npm run bench:writer
 ```
 
 The soak test reports initial delay, scheduler underruns, silence at joins, coverage and peak buffered audio. Its ignored `test-results/soak/` archives include packet arrival times for reproduction. It fails on underruns or an incomplete episode. The older smoke script acknowledges audio immediately and cannot measure playback continuity.
+
+To test browser playback, speed changes and captions without more API calls, replay an existing local archive after building. This serves a separate test app at `http://127.0.0.1:4319`:
+
+```powershell
+npm run build
+npm run replay -- data/<episode-id>
+```
+
+For a finite, paid vocal-direction comparison, reuse a writer plan from an episode with Expressive voice enabled:
+
+```powershell
+npm run experiment:voice -- data/<episode-id>
+```
+
+This generates neutral and expressive WAVs with the same bilingual words, plus raw transcripts and coverage under ignored `test-results/voice-experiment-*`. Generation is stochastic; listen to the samples to judge prosody. Automated transcript coverage alone cannot prove an emotion was performed correctly.
 
 See [docs/verification.md](docs/verification.md) for measured live and browser results and [docs/architecture.md](docs/architecture.md) for design decisions and sources.
 

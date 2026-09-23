@@ -21,13 +21,14 @@ const seeds = [
 export class PlaybackGate {
   played = 0;
   paused = false;
+  rate = 1;
   lastProgress = Date.now();
   update(played: number, paused: boolean, generated: number) {
     this.played = Math.max(this.played, Math.min(played, generated));
     this.paused = paused;
     this.lastProgress = Date.now();
   }
-  canProduce(generated: number) { return !this.paused && generated - this.played < SAMPLE_RATE * 45; }
+  canProduce(generated: number) { return !this.paused && generated - this.played < SAMPLE_RATE * 45 * this.rate; }
   async wait(generated: () => number, signal: AbortSignal) {
     while (!this.canProduce(generated())) {
       signal.throwIfAborted();
@@ -51,13 +52,15 @@ export class Episode {
     this.folder = join(config.dataDir, this.id);
     mkdirSync(this.folder, { recursive: true });
     this.planner = new Planner(config.plannerModel, config.plannerPool, settings, config.contextLimit);
+    this.gate.rate = settings.speed;
     writeFileSync(join(this.folder, 'episode.json'), JSON.stringify({ version: 2, id: this.id, createdAt: new Date().toISOString(), settings,
       plannerModel: config.plannerModel, liveModel: config.liveModel, sampleRate: SAMPLE_RATE }, null, 2));
   }
   private record(event: unknown) { appendFileSync(join(this.folder, 'ledger.jsonl'), JSON.stringify(event) + '\n'); }
   stop() { this.controller.abort(new DOMException('Stopped', 'AbortError')); }
-  progress(played: number, paused: boolean, playback?: PlaybackDiagnostics) {
+  progress(played: number, paused: boolean, playback?: PlaybackDiagnostics, rate?: number) {
     this.gate.update(played, paused, this.totalSamples);
+    if (rate !== undefined) this.gate.rate = Math.min(2, Math.max(1, rate));
     if (playback) this.playback = playback;
   }
   /** maxPlans bounds writing calls for finite live verification, not individual voice turns. */

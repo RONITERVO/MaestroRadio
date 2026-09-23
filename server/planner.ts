@@ -5,14 +5,13 @@ import { KeyPool, PublicError } from './keys.ts';
 import { writerInstruction } from './prompts.ts';
 import { countFullRequest } from './tokens.ts';
 import { languageReason } from './languages.ts';
+import { stripVoiceTags, hasVoiceTags, invalidVoiceTag } from '../shared/voice-tags.ts';
 
 export class ContextFull extends PublicError {}
-export function fingerprint(text: string) { return text.normalize('NFKC').toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim(); }
+export function fingerprint(text: string) { return stripVoiceTags(text).normalize('NFKC').toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim(); }
 export function repetitionReason(plan: Plan, previous: Plan[]): string | null {
-  const angles = new Set(previous.map(p => fingerprint(p.angle)));
   const facts = new Set(previous.flatMap(p => p.newFacts.map(fingerprint)));
   const sentences = previous.flatMap(p => p.pairs.map(pair => fingerprint(pair.target)));
-  if (angles.has(fingerprint(plan.angle))) return 'This angle was already covered.';
   if (plan.newFacts.some(f => facts.has(fingerprint(f)))) return 'A claimed new fact was already covered.';
   const seen = new Set(sentences);
   for (const pair of plan.pairs) {
@@ -47,7 +46,7 @@ export class Planner {
   }
   observe(text: string) { this.history.push({ role: 'user', parts: [{ text }] }); }
   async next(signal: AbortSignal, onContext: () => void): Promise<Plan> {
-    this.observe(this.plans.length ? 'Continue with the next fresh passage. Use all preceding plans and narration receipts. The most recent planned passage may still be speaking; continue after its script without repeating it.' : 'Begin the podcast with a specific fact. Keep the first target sentence especially concise, about 8–12 words, with a compact faithful translation. Then develop that fact in the remaining pairs.');
+    this.observe(this.plans.length ? 'Continue with the next fresh passage. Use all preceding plans and narration receipts. The most recent planned passage may still be speaking; continue after its script without repeating it.' : 'Begin directly in the requested style, or with a specific fact if none is specified. Keep the first target sentence especially concise, about 8–12 words, with a compact faithful translation. Then develop that thought in the remaining pairs.');
     for (let repair = 0; repair < 3; repair++) {
       const response = await this.pool.run(async key => {
         const ai = this.client(key);
@@ -60,6 +59,7 @@ export class Planner {
         return ai.models.generateContent({
           model: this.model, contents,
           config: { systemInstruction: this.system, responseMimeType: 'application/json', responseJsonSchema: z.toJSONSchema(planSchema.extend({
+            angle: planSchema.shape.angle.describe('A short title for the NEW development in this passage. Do not copy the requested style or overall topic.'),
             pairs: z.array(z.object({
               target: z.string().min(1).max(300).describe(`The sentence in ${this.settings.target.name}, spoken FIRST.`),
               native: z.string().min(1).max(400).describe(`Faithful translation into ${this.settings.native.name}, spoken SECOND.`),
@@ -79,6 +79,11 @@ export class Planner {
       let reason = 'Return valid JSON matching the schema. Keep sentences short and return at most four bilingual pairs.';
       try {
         const plan = planSchema.parse(JSON.parse(raw));
+        const texts = plan.pairs.flatMap(pair => [pair.target, pair.native]);
+        if (texts.some(text => invalidVoiceTag(text) || (!this.settings.expressive && hasVoiceTags(text)))) {
+          reason = this.settings.expressive ? 'Use only the permitted audible vocal tags. Remove all other bracketed directions.' : 'Remove all bracketed vocal tags; expressive voice is disabled.';
+          this.observe(`This draft was NOT narrated. Repair required: ${reason}`); continue;
+        }
         const language = languageReason(plan, this.settings);
         const repeat = repetitionReason(plan, this.plans);
         if (!language && !repeat) { this.plans.push(plan); return plan; }

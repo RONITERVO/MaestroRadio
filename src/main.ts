@@ -14,12 +14,20 @@ for (const id of ['target','native']) for (const [code, name] of languages) {
   const option = new Option(name, code); $(id).append(option);
 }
 $<HTMLSelectElement>('native').value = 'en-US';
-const preferences = ['target','native','level','voice','buffer'];
+const preferences = ['target','native','level','voice','buffer','style','speed'];
 try { const saved = JSON.parse(localStorage.getItem('maestro-radio-preferences') || '{}');
-  for (const id of preferences) if (typeof saved[id] === 'string') $<HTMLSelectElement>(id).value = saved[id];
+  for (const id of preferences) {
+    const input = $<HTMLSelectElement | HTMLTextAreaElement>(id);
+    if (typeof saved[id] !== 'string') continue;
+    if (input instanceof HTMLSelectElement && !Array.from(input.options).some(option => option.value === saved[id])) continue;
+    input.value = saved[id];
+  }
+  $<HTMLInputElement>('expressive').checked = saved.expressive === true;
 } catch { /* Storage unavailable or obsolete preferences. */ }
+$<HTMLSelectElement>('playback-speed').value = $<HTMLSelectElement>('speed').value;
+document.querySelectorAll<HTMLButtonElement>('[data-style]').forEach(button => { button.onclick = () => { $<HTMLTextAreaElement>('style').value = button.dataset.style!; }; });
 function savePreferences() {
-  try { localStorage.setItem('maestro-radio-preferences', JSON.stringify(Object.fromEntries(preferences.map(id => [id, $<HTMLSelectElement>(id).value])))); } catch { /* Private browsing. */ }
+  try { localStorage.setItem('maestro-radio-preferences', JSON.stringify({ ...Object.fromEntries(preferences.map(id => [id, $<HTMLSelectElement>(id).value])), expressive: $<HTMLInputElement>('expressive').checked })); } catch { /* Private browsing. */ }
 }
 let configured = false;
 void fetch('/api/config').then(r => r.json()).then(config => {
@@ -51,8 +59,14 @@ let endedWithError = false;
 function notice(message: string) { $('notice').textContent = message; $('notice').hidden = false; }
 function setStatus(text: string) { if ($('status').textContent !== text) $('status').textContent = text; }
 function sendProgress() {
-  if (socket?.readyState === WebSocket.OPEN && player) socket.send(JSON.stringify({ type: 'progress', playedSamples: player.playedSamples, paused: player.paused || player.context.state !== 'running', playback: player.diagnostics }));
+  if (socket?.readyState === WebSocket.OPEN && player) socket.send(JSON.stringify({ type: 'progress', playedSamples: player.playedSamples, paused: player.paused || player.context.state !== 'running', playbackRate: player.rate, playback: player.diagnostics }));
 }
+for (const id of ['speed', 'playback-speed']) $(id).onchange = () => {
+  const value = $<HTMLSelectElement>(id).value;
+  $<HTMLSelectElement>('speed').value = value; $<HTMLSelectElement>('playback-speed').value = value;
+  try { player?.setRate(Number(value)); savePreferences(); sendProgress(); }
+  catch { notice('Playback speed could not be changed.'); }
+};
 window.addEventListener('scroll', () => {
   if (performance.now() - lastAutoScroll > 100) follow = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 100;
 }, { passive: true });
@@ -157,11 +171,13 @@ async function start(random: boolean) {
   const target = { code: targetCode, name: languages.find(([code]) => code === targetCode)![1] };
   const native = { code: nativeCode, name: languages.find(([code]) => code === nativeCode)![1] };
   const settings: Settings = { topic: random ? '' : $<HTMLInputElement>('topic').value, target, native,
+    style: $<HTMLTextAreaElement>('style').value, expressive: $<HTMLInputElement>('expressive').checked, speed: Number($<HTMLSelectElement>('speed').value),
     level: $<HTMLSelectElement>('level').value as Settings['level'], voice: $<HTMLSelectElement>('voice').value as Settings['voice'], bufferMs: Number($<HTMLSelectElement>('buffer').value) };
   cues = []; cueIndex = 0; cueChars = 0; revealed = []; elements.clear(); currentLine = ''; ending = undefined;
   endedWithError = false; follow = true; episodeId = '';
   $('transcript').replaceChildren(); $('notice').hidden = true;
   player = new StreamPlayer(settings.bufferMs);
+  player.setRate(settings.speed);
   starting = true;
   try { await player.unlock(); } catch { await player.stop(); notice('Audio could not start. Allow audio in this browser and try again.'); return; }
   finally { starting = false; }

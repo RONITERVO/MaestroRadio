@@ -3,6 +3,9 @@ export { SAMPLE_RATE } from './audio.ts';
 export const languageSchema = z.object({ name: z.string().trim().min(1).max(60), code: z.string().regex(/^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/) });
 export const settingsSchema = z.object({
   topic: z.string().trim().max(2000).default(''),
+  style: z.string().trim().max(1200).default(''),
+  expressive: z.boolean().default(false),
+  speed: z.number().min(1).max(2).default(1),
   target: languageSchema.default({ name: 'Spanish', code: 'es-ES' }),
   native: languageSchema.default({ name: 'English', code: 'en-US' }),
   level: z.enum(['A1', 'A2', 'B1', 'B2', 'C1']).default('B1'),
@@ -34,7 +37,7 @@ const playbackDiagnosticsSchema = z.object({ firstStartSeconds: z.number().nonne
 export type PlaybackDiagnostics = z.infer<typeof playbackDiagnosticsSchema>;
 export const clientMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('start'), settings: settingsSchema, keys: z.array(z.string().trim().min(10).max(256)).max(100).default([]) }),
-  z.object({ type: z.literal('progress'), playedSamples: z.number().int().nonnegative(), paused: z.boolean(), playback: playbackDiagnosticsSchema.optional() }),
+  z.object({ type: z.literal('progress'), playedSamples: z.number().int().nonnegative(), paused: z.boolean(), playbackRate: z.number().min(1).max(2).optional(), playback: playbackDiagnosticsSchema.optional() }),
   z.object({ type: z.literal('stop') }),
 ]);
 export function linesFor(plan: Plan, settings: Settings): Line[] {

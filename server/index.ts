@@ -62,7 +62,7 @@ wss.on('connection', ws => {
     try {
       const message = clientMessageSchema.parse(JSON.parse(raw.toString()));
       if (message.type === 'stop') { episode?.stop(); return; }
-      if (message.type === 'progress') { episode?.progress(message.playedSamples, message.paused, message.playback); return; }
+      if (message.type === 'progress') { episode?.progress(message.playedSamples, message.paused, message.playback, message.playbackRate); return; }
       if (started) { send({ type: 'error', message: 'This connection already owns an episode.' }); return; }
       if (message.settings.target.code.split('-')[0] === message.settings.native.code.split('-')[0]) {
         send({ type: 'error', message: 'Choose different target and translation languages.' }); send({ type: 'end', reason: 'error', endSample: 0 }); return;
