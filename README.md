@@ -27,6 +27,39 @@ npm start
 
 `npm start` serves the built client and backend together. The app binds to loopback. This release is for a local, single-user server; it is not a public hosted service.
 
+For a Windows desktop and Start menu shortcut, run `powershell -ExecutionPolicy Bypass -File scripts/Install-Shortcut.ps1`. **Maestro Radio** (or **Ctrl+Alt+M**) starts the local server if needed and opens the app. Run `npm run build` after updating; the shortcut prefers the built client.
+
+## Android (native Kotlin)
+
+The `android/` project runs the writer, Gemini Live narrator and Lyria **directly on the phone**. It needs no PC, Node server, WebView or ADB reverse connection. Native `AudioTrack` playback drives the transcript clock, with independent stereo music, pitch-preserving 1–2× speech, a foreground media service, headphone/audio-focus handling and lock-screen pause/end controls.
+
+Build with JDK 17 or 21 and Android SDK 36:
+
+```powershell
+npm run android:prompts
+cd android
+# Set ANDROID_HOME or sdk.dir in your untracked local.properties.
+.\gradlew.bat :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
+cd ..
+npm run android:install
+```
+
+APK: `android/app/build/outputs/apk/debug/app-debug.apk`. This is a locally signed **debug/test APK**, not a Play Store release. Set `ADB` if your adb executable is somewhere other than `C:/adb/adb.exe` on Windows or `adb` on other platforms. Installation targets one USB-authorized device.
+
+Use Settings to paste multiple Gemini keys or import a `.env` file. Keys are encrypted using Android Keystore; cloud backup and device transfer are disabled. No keys are bundled in the APK. For your own connected development phone, `npm run android:install -- --with-keys` can provision the desktop shared key pool through stdin into the app-private sandbox; the app encrypts it on launch and deletes the temporary import. The installer never prints keys or includes them in shell arguments.
+
+The native writer shares generated prompt templates and the desktop default/fallback model order. It checks every full-history request against the selected model's actual context limit, validates repetition, and rejects missing spoken translations before playing a voice turn. The desktop additionally uses `franc` for a conservative language-reversal check; the native app currently relies on explicit language field contracts and transcript coverage. Native archives (plans, complete memory, actual transcripts and heard-text export) stay in the app's private storage; raw voice/music PCM is not retained. An interrupted/killed app does not automatically resume an old episode.
+
+## Lyria background music
+
+Music is enabled by default and can be turned off under **Music** (Android: **Style & music**) for the next episode. Leave the music description blank for **automatic scoring**: the writer composes a new prompt for the podcast's subject and storytelling style, using actual DrawnExplainers video scores as examples. It chooses concrete instruments, playing techniques, space and mood, with room for narration. You can still enter a custom description to override it. Existing installations replace the old stock description with automatic mode once; custom descriptions are preserved.
+
+The score prompt arrives in the normal opening passage, without a separate LLM request. Lyria connects in parallel with speech generation and retains the same prompt throughout the episode and any music reconnects. Settings shows the chosen prompt; it never enters spoken lines or the transcript. If the writer returns malformed music metadata, valid narration continues and the next normal passage asks again, up to three passages, after which music is skipped with a status message. Volume changes immediately in Settings; music remains at its natural speed when speech speeds up.
+
+The stream uses [`lyria-realtime-exp`](https://ai.google.dev/gemini-api/docs/realtime-music-generation), **QUALITY** mode, guidance 4.5 and temperature 1.0, with sparse arrangement settings. The approach comes from DrawnExplainers: a continuous instrumental bed, a gradual entrance, and speech-driven compression (threshold 0.06, ratio 9, attack 12 ms, release 420 ms). The browser uses a stereo audio worklet and a soft limiter. Android uses hardware playback, speech-level tracking and reserved mixing headroom. Offline FFmpeg loudness normalization cannot be reproduced exactly in a causal live stream, so this is an adaptation of that mix, not identical mastered output.
+
+Music buffers independently, pauses provider generation when the listener pauses or the buffer is full, and attempts bounded reconnections. Lyria access/quota failures only disable the music; narration continues. Lyria is experimental and must be available to at least one configured project. Music generation uses additional API quota/cost; muting volume alone does not turn generation off.
+
 ## Keys and configuration
 
 Accepted shared key formats:
@@ -41,7 +74,7 @@ GEMINI_API_KEY37=another-key
 
 `GEMINI_API_KEY`, `GEMINI_API_KEY_1`, and `GOOGLE_API_KEY` also work. `.env.local` takes precedence over `.env`; process environment takes precedence over both. `GEMINI_KEYS_FILE` can reference an existing local env file, avoiding duplicated credentials. Only shared key variables are read from that file.
 
-Optional `PLANNER_API_KEYS` and `LIVE_API_KEYS` give the writer and narrator separate pools. Browser-pasted keys replace both pools for that connection and remain only in tab/server memory. Keys are never included in episode files, URLs, localStorage, or client bundles.
+Optional `PLANNER_API_KEYS`, `LIVE_API_KEYS` and `MUSIC_API_KEYS` give each model family separate pools. Browser-pasted keys replace these pools for that connection and remain only in tab/server memory. Keys are never included in episode files, browser page URLs, localStorage, or client bundles.
 
 Pool behavior: deduplication, rotation, model-specific access quarantine and cooldowns, bounded retries, and cancellation. Available keys are tried immediately; waiting happens only when every usable key for that model is cooling down. Every configured key can be tried, including pools larger than eight keys. Concurrent requests prefer idle keys, and a writer quota failure does not prevent using that key for Live.
 
@@ -53,6 +86,7 @@ Google's [rate limits](https://ai.google.dev/gemini-api/docs/rate-limits) apply 
 | `PLANNER_FALLBACK_MODELS` | `gemini-3-flash-preview,gemini-2.5-flash-lite` | Ordered writer fallbacks; set empty to disable |
 | `PLANNER_TIMEOUT_MS` | `12000` | Deadline per writer model attempt, including token counting and key rotation |
 | `LIVE_MODEL` | `gemini-2.5-flash-native-audio-preview-12-2025` | MaestroTutor's established narrator |
+| `MUSIC_MODEL` | `lyria-realtime-exp` | Continuous instrumental background music |
 | `CONTEXT_LIMIT` | `1048576` | Optional smaller ceiling; also capped by actual model metadata |
 | `PORT` | `4317` | Local HTTP/WebSocket port |
 | `DATA_DIR` | `./data` | Private episode archives |
@@ -125,6 +159,7 @@ Each episode creates an ignored `data/<uuid>/` folder:
 - `ledger.jsonl`: accepted plans, observed cues, completed/rejected transcripts, coverage, voice timing, terminal reason, last acknowledged playback position and browser playback diagnostics.
 - `audio.pcm`: raw 24 kHz, mono, signed 16-bit little-endian generated audio.
 - `memory.json`: complete writer conversation and usage at graceful shutdown.
+- `music.json`: the selected music prompt and whether it came from the writer or a custom description (when music is enabled and a prompt was selected). Android stores this in its private episode folder too.
 
 Generated and actually played audio are distinguished; ending may leave unplayed generated audio in the archive. These files contain your listening content. They remain on this machine until you remove them. Disconnect ends generation. This version supports pause/resume within a tab, **not automatic episode resumption after closing the tab or restarting the server**. Archives make that extension possible without pretending unheard material was played.
 
@@ -137,6 +172,8 @@ ffplay -f s16le -ar 24000 -ac 1 data/<episode-id>/audio.pcm
 ## Verification
 
 `npm test` covers context exhaustion, complete-history counting, bounded repair, language reversals, key handling, split transcription, real-audio gating, CJK text, immutable cue timing, playback backpressure, ordered concurrent narration, private voice repair, Live completion/cancellation, and browser audio scheduling through pauses/underruns.
+
+`npm run bench:music-prompts` performs three finite live writer requests for contrasting subjects/styles, saving the generated score prompts and opening-passage latency under `test-results/music/`. It uses your configured keys and consumes writer quota, but does not generate audio. Unit tests cover automatic/custom/off modes, selecting only an accepted passage's score, keeping music metadata out of speech, and bounded recovery from malformed music fields on both platforms.
 
 Optional paid live check (two writer batches, finite and separately archived):
 

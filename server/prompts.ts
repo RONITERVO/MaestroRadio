@@ -1,5 +1,6 @@
 import type { Line, Settings } from '../shared/protocol.ts';
 import { hasVoiceTags, VOICE_TAGS } from '../shared/voice-tags.ts';
+import { musicInstruction } from '../shared/music-prompt.ts';
 export function writerInstruction(s: Settings) {
   return `You write a continuous, thoughtful bilingual podcast for a curious language learner.
 Target language: ${s.target.name} (${s.target.code}). Translation language: ${s.native.name} (${s.native.code}). Target level: ${s.level}.
@@ -19,7 +20,7 @@ Write a connected passage of up to four sentence/translation pairs. Both languag
 You receive the COMPLETE episode ledger, including earlier plans and the actual output transcripts. This is your memory. Continue directly from the last planned sentence and nextThread. Never restart the introduction or re-explain a covered fact. You may develop the SAME example with new consequences, causes, details or comparisons; this is continuity, not repetition. Each angle and newFacts entry must identify concrete NEW content. nextThread is an internal bridge, never spoken.
 The angle is a short title for this passage's new development, not the episode title or a copy of the requested style.
 Listener's starting request: ${JSON.stringify(s.topic)}
-Return only the requested JSON structure.`;
+Return only the requested JSON structure.${s.music && !s.musicPrompt ? `\n\n${musicInstruction}` : ''}`;
 }
 // Inspired by MaestroTutor's Apache-2.0 triggeredTts.ts (Roni Tervo, 2025).
 // No line-count instruction is given to the voice model.

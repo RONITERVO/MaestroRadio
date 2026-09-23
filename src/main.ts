@@ -2,6 +2,7 @@ import './style.css';
 import type { Cue, ServerEvent, Settings } from '../shared/protocol.ts';
 import { SAMPLE_RATE } from '../shared/audio.ts';
 import { StreamPlayer } from './player.ts';
+import { LEGACY_MUSIC_PROMPT } from '../shared/music-prompt.ts';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const languages = [
@@ -14,8 +15,9 @@ for (const id of ['target','native']) for (const [code, name] of languages) {
   const option = new Option(name, code); $(id).append(option);
 }
 $<HTMLSelectElement>('native').value = 'en-US';
-const preferences = ['target','native','level','voice','buffer','style','speed'];
+const preferences = ['target','native','level','voice','buffer','style','speed','music-prompt','music-volume'];
 try { const saved = JSON.parse(localStorage.getItem('maestro-radio-preferences') || '{}');
+  if (saved.autoMusicVersion !== 1 && saved['music-prompt'] === LEGACY_MUSIC_PROMPT) saved['music-prompt'] = '';
   for (const id of preferences) {
     const input = $<HTMLSelectElement | HTMLTextAreaElement>(id);
     if (typeof saved[id] !== 'string') continue;
@@ -23,11 +25,12 @@ try { const saved = JSON.parse(localStorage.getItem('maestro-radio-preferences')
     input.value = saved[id];
   }
   $<HTMLInputElement>('expressive').checked = saved.expressive === true;
+  $<HTMLInputElement>('music').checked = saved.music !== false;
 } catch { /* Storage unavailable or obsolete preferences. */ }
 $<HTMLSelectElement>('playback-speed').value = $<HTMLSelectElement>('speed').value;
 document.querySelectorAll<HTMLButtonElement>('[data-style]').forEach(button => { button.onclick = () => { $<HTMLTextAreaElement>('style').value = button.dataset.style!; }; });
 function savePreferences() {
-  try { localStorage.setItem('maestro-radio-preferences', JSON.stringify({ ...Object.fromEntries(preferences.map(id => [id, $<HTMLSelectElement>(id).value])), expressive: $<HTMLInputElement>('expressive').checked })); } catch { /* Private browsing. */ }
+  try { localStorage.setItem('maestro-radio-preferences', JSON.stringify({ ...Object.fromEntries(preferences.map(id => [id, $<HTMLSelectElement>(id).value])), autoMusicVersion: 1, expressive: $<HTMLInputElement>('expressive').checked, music: $<HTMLInputElement>('music').checked })); } catch { /* Private browsing. */ }
 }
 let configured = false;
 let modelInfo = { writer: '', fallbacks: [] as string[], voice: '', keys: '' };
@@ -61,8 +64,9 @@ let endedWithError = false;
 function notice(message: string) { $('notice').textContent = message; $('notice').hidden = false; }
 function setStatus(text: string) { if ($('status').textContent !== text) $('status').textContent = text; }
 function sendProgress() {
-  if (socket?.readyState === WebSocket.OPEN && player) socket.send(JSON.stringify({ type: 'progress', playedSamples: player.playedSamples, paused: player.paused || player.context.state !== 'running', playbackRate: player.rate, playback: player.diagnostics }));
+  if (socket?.readyState === WebSocket.OPEN && player) socket.send(JSON.stringify({ type: 'progress', playedSamples: player.playedSamples, paused: player.paused || player.context.state !== 'running', musicBufferedSeconds: player.musicBufferedSeconds, playbackRate: player.rate, playback: player.diagnostics }));
 }
+$('music-volume').oninput = () => { player?.setMusicVolume(Number($<HTMLInputElement>('music-volume').value)); savePreferences(); };
 for (const id of ['speed', 'playback-speed']) $(id).onchange = () => {
   const value = $<HTMLSelectElement>(id).value;
   $<HTMLSelectElement>('speed').value = value; $<HTMLSelectElement>('playback-speed').value = value;
@@ -158,6 +162,9 @@ function handle(event: ServerEvent) {
       break;
     }
     case 'audio': player.add(event.data, event.startSample); break;
+    case 'music': player.addMusic(event.data, event.sampleRate, event.channels); break;
+    case 'musicPrompt': $('episode-music-prompt').textContent = event.prompt; $('episode-music-details').hidden = false; break;
+    case 'musicStatus': $('music-status').textContent = event.detail || (event.state === 'playing' ? 'Lyria is playing. Music softens automatically under speech.' : 'Connecting to Lyria…'); if (event.state === 'unavailable' && event.detail) notice(event.detail); break;
     case 'cue': cues.push({ turn: event.turn, cue: event.cue }); break;
     case 'error': endedWithError = true; notice(event.message); setStatus('Stream issue'); break;
     case 'end': ending = { reason: event.reason, sample: event.endSample }; break;
@@ -174,12 +181,16 @@ async function start(random: boolean) {
   const target = { code: targetCode, name: languages.find(([code]) => code === targetCode)![1] };
   const native = { code: nativeCode, name: languages.find(([code]) => code === nativeCode)![1] };
   const settings: Settings = { topic: random ? '' : $<HTMLInputElement>('topic').value, target, native,
+    music: $<HTMLInputElement>('music').checked, musicPrompt: $<HTMLTextAreaElement>('music-prompt').value, musicVolume: Number($<HTMLInputElement>('music-volume').value),
     style: $<HTMLTextAreaElement>('style').value, expressive: $<HTMLInputElement>('expressive').checked, speed: Number($<HTMLSelectElement>('speed').value),
     level: $<HTMLSelectElement>('level').value as Settings['level'], voice: $<HTMLSelectElement>('voice').value as Settings['voice'], bufferMs: Number($<HTMLSelectElement>('buffer').value) };
   cues = []; cueIndex = 0; cueChars = 0; revealed = []; elements.clear(); currentLine = ''; ending = undefined;
   endedWithError = false; follow = true; episodeId = '';
   $('transcript').replaceChildren(); $('notice').hidden = true;
+  $('episode-music-details').hidden = true; $('episode-music-prompt').textContent = '';
+  $('music-status').textContent = !settings.music ? 'Music is off for this episode.' : settings.musicPrompt.trim() ? 'Connecting to Lyria…' : 'Choosing music for this episode…';
   player = new StreamPlayer(settings.bufferMs);
+  player.setMusicVolume(settings.musicVolume);
   player.setRate(settings.speed);
   starting = true;
   try { await player.unlock(); } catch { await player.stop(); notice('Audio could not start. Allow audio in this browser and try again.'); return; }

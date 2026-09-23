@@ -1,6 +1,6 @@
 import { GoogleGenAI, type Content } from '@google/genai';
 import { z } from 'zod';
-import { planSchema, type Plan, type Settings } from '../shared/protocol.ts';
+import { planSchema, musicPromptSchema, type Plan, type Settings } from '../shared/protocol.ts';
 import { KeyPool, PublicError, KeysUnavailable, errorStatus, safeError } from './keys.ts';
 import { writerInstruction } from './prompts.ts';
 import { countFullRequest } from './tokens.ts';
@@ -48,6 +48,7 @@ export class Planner {
   readonly system: string;
   private models: string[];
   private limits = new Map<string, number>();
+  private musicChosen = false;
   constructor(public model: string, private keys: KeyPool, private settings: Settings, readonly ceiling: number,
     private client = (key: string) => new GoogleGenAI({ apiKey: key }), private counter = countFullRequest, private routing: PlannerRouting = {}) {
     this.models = [...new Set([model, ...(routing.fallbacks ?? [])])];
@@ -93,6 +94,15 @@ export class Planner {
   }
   observe(text: string) { this.history.push({ role: 'user', parts: [{ text }] }); }
   async next(signal: AbortSignal, onContext: () => void): Promise<Plan> {
+    const wantsMusic = this.settings.music && !this.settings.musicPrompt && !this.musicChosen && this.plans.length < 3;
+    const responseSchema = planSchema.omit({ musicPrompt: true }).extend({
+      angle: planSchema.shape.angle.describe('A short title for the NEW development in this passage. Do not copy the requested style or overall topic.'),
+      pairs: z.array(z.object({
+        target: z.string().min(1).max(300).describe(`The sentence in ${this.settings.target.name}, spoken FIRST.`),
+        native: z.string().min(1).max(400).describe(`Faithful translation into ${this.settings.native.name}, spoken SECOND.`),
+      })).min(1).max(4),
+      ...(wantsMusic ? { musicPrompt: musicPromptSchema.describe('Original 45–85 word instrumental score direction tailored to this episode; production metadata only.') } : {}),
+    });
     this.observe(this.plans.length ? 'Continue with the next fresh passage. Use all preceding plans and narration receipts. The most recent planned passage may still be speaking; continue after its script without repeating it.' : 'Begin directly in the requested style, or with a specific fact if none is specified. Keep the first target sentence especially concise, about 8–12 words, with a compact faithful translation. Then develop that thought in the remaining pairs.');
     for (let repair = 0; repair < 3; repair++) {
       // All model/key attempts use the same complete snapshot, with provider signatures intact.
@@ -109,13 +119,7 @@ export class Planner {
         if (this.used + 8192 >= this.limit) throw new ContextFull('The episode reached its full-memory context limit.');
         return ai.models.generateContent({
           model, contents,
-          config: { systemInstruction: this.system, responseMimeType: 'application/json', responseJsonSchema: z.toJSONSchema(planSchema.extend({
-            angle: planSchema.shape.angle.describe('A short title for the NEW development in this passage. Do not copy the requested style or overall topic.'),
-            pairs: z.array(z.object({
-              target: z.string().min(1).max(300).describe(`The sentence in ${this.settings.target.name}, spoken FIRST.`),
-              native: z.string().min(1).max(400).describe(`Faithful translation into ${this.settings.native.name}, spoken SECOND.`),
-            })).min(1).max(4),
-          })),
+          config: { systemInstruction: this.system, responseMimeType: 'application/json', responseJsonSchema: z.toJSONSchema(responseSchema),
             thinkingConfig: writerThinking(model),
             temperature: 0.8, maxOutputTokens: 2048, abortSignal: attemptSignal, httpOptions: { timeout: this.routing.timeoutMs ?? 60_000 } },
         });
@@ -128,7 +132,11 @@ export class Planner {
       this.history.push(response.candidates?.[0]?.content ?? { role: 'model', parts: [{ text: raw || '(No text returned)' }] });
       let reason = 'Return valid JSON matching the schema. Keep sentences short and return at most four bilingual pairs.';
       try {
-        const plan = planSchema.parse(JSON.parse(raw));
+        const data = JSON.parse(raw);
+        // A malformed music field must never discard valid speech. Ask again in the
+        // next normal passage (up to three), without an extra request or startup wait.
+        const plan: Plan = planSchema.omit({ musicPrompt: true }).parse(data);
+        const music = musicPromptSchema.safeParse(data.musicPrompt);
         const texts = plan.pairs.flatMap(pair => [pair.target, pair.native]);
         if (texts.some(text => invalidVoiceTag(text) || (!this.settings.expressive && hasVoiceTags(text)))) {
           reason = this.settings.expressive ? 'Use only the permitted audible vocal tags. Remove all other bracketed directions.' : 'Remove all bracketed vocal tags; expressive voice is disabled.';
@@ -136,7 +144,10 @@ export class Planner {
         }
         const language = languageReason(plan, this.settings);
         const repeat = repetitionReason(plan, this.plans);
-        if (!language && !repeat) { this.plans.push(plan); return plan; }
+        if (!language && !repeat) {
+          if (wantsMusic && music.success) { plan.musicPrompt = music.data; this.musicChosen = true; }
+          this.plans.push(plan); return plan;
+        }
         reason = language || `${repeat} Choose a different concrete fact and example. Do not paraphrase the repeated material.`;
       } catch { /* Invalid structured response: bounded repair with full history. */ }
       this.observe(`This draft was NOT narrated. Repair required: ${reason}`);

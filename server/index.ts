@@ -9,6 +9,7 @@ import { clientMessageSchema, type ServerEvent } from '../shared/protocol.ts';
 import { envKeys, parseKeys, KeyPool } from './keys.ts';
 import { Episode } from './episode.ts';
 import { writerModels } from './writer-models.ts';
+import { MusicStream, MUSIC_MODEL } from './music.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 dotenv.config({ path: [resolve(root, '.env.local'), resolve(root, '.env')], quiet: true });
@@ -24,6 +25,7 @@ const keyEnvironment = process.env.GEMINI_KEYS_FILE
 const shared = new KeyPool(envKeys(keyEnvironment));
 const plannerPool = process.env.PLANNER_API_KEYS ? new KeyPool(parseKeys(process.env.PLANNER_API_KEYS)) : shared;
 const livePool = process.env.LIVE_API_KEYS ? new KeyPool(parseKeys(process.env.LIVE_API_KEYS)) : shared;
+const musicPool = process.env.MUSIC_API_KEYS ? new KeyPool(parseKeys(process.env.MUSIC_API_KEYS)) : shared;
 const app = express();
 app.disable('x-powered-by');
 app.use((req, res, next) => {
@@ -34,7 +36,7 @@ app.use((req, res, next) => {
   next();
 });
 app.get('/api/config', (_req, res) => res.json({ plannerModel, plannerFallbackModels: writer.fallbacks, liveModel, configured: plannerPool.size > 0 && livePool.size > 0,
-  plannerKeys: plannerPool.size, liveKeys: livePool.size }));
+  plannerKeys: plannerPool.size, liveKeys: livePool.size, musicModel: process.env.MUSIC_MODEL || MUSIC_MODEL }));
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 const server = createServer(app);
 const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
@@ -48,23 +50,27 @@ server.on('upgrade', (req, socket, head) => {
 });
 wss.on('connection', ws => {
   let episode: Episode | undefined;
+  let music: MusicStream | undefined;
   let started = false;
   let alive = true;
+  let paused = false;
+  let startMusic: ((prompt: string) => void) | undefined;
   const send = (event: ServerEvent) => {
     if (ws.readyState !== WebSocket.OPEN) return;
-    if (ws.bufferedAmount > 8 * 1024 * 1024) { episode?.stop(); ws.close(1013, 'Playback connection too slow'); return; }
+    if (ws.bufferedAmount > 8 * 1024 * 1024) { episode?.stop(); music?.stop(); ws.close(1013, 'Playback connection too slow'); return; }
     ws.send(JSON.stringify(event));
+    if (event.type === 'musicPrompt') startMusic?.(event.prompt);
   };
   const heartbeat = setInterval(() => {
-    if (!alive) { episode?.stop(); ws.terminate(); return; }
+    if (!alive) { episode?.stop(); music?.stop(); ws.terminate(); return; }
     alive = false; ws.ping();
   }, 30_000);
   ws.on('pong', () => { alive = true; });
   ws.on('message', raw => {
     try {
       const message = clientMessageSchema.parse(JSON.parse(raw.toString()));
-      if (message.type === 'stop') { episode?.stop(); return; }
-      if (message.type === 'progress') { episode?.progress(message.playedSamples, message.paused, message.playback, message.playbackRate); return; }
+      if (message.type === 'stop') { episode?.stop(); music?.stop(); return; }
+      if (message.type === 'progress') { paused = message.paused; episode?.progress(message.playedSamples, message.paused, message.playback, message.playbackRate); music?.progress(message.paused, message.musicBufferedSeconds); return; }
       if (started) { send({ type: 'error', message: 'This connection already owns an episode.' }); return; }
       if (message.settings.target.code.split('-')[0] === message.settings.native.code.split('-')[0]) {
         send({ type: 'error', message: 'Choose different target and translation languages.' }); send({ type: 'end', reason: 'error', endSample: 0 }); return;
@@ -74,13 +80,19 @@ wss.on('connection', ws => {
         send({ type: 'error', message: 'Add a Gemini API key in settings or .env.' }); send({ type: 'end', reason: 'error', endSample: 0 }); return;
       }
       started = true;
+      startMusic = prompt => {
+        if (music || !message.settings.music || episode?.controller.signal.aborted) return;
+        music = new MusicStream(byok ?? musicPool, prompt, send, process.env.MUSIC_MODEL || MUSIC_MODEL);
+        music.progress(paused, 0);
+        void music.run();
+      };
       episode = new Episode(message.settings, { plannerModel, plannerFallbackModels: writer.fallbacks, plannerTimeoutMs: writer.timeoutMs, liveModel, contextLimit,
         dataDir: resolve(root, process.env.DATA_DIR || 'data'), plannerPool: byok ?? plannerPool, livePool: byok ?? livePool }, send);
       void episode.run().catch(() => send({ type: 'error', message: 'The local episode archive could not be written. Check disk access.' }));
-    } catch { send({ type: 'error', message: 'Invalid stream request. Check the settings and restart.' }); episode?.stop(); if (!episode) send({ type: 'end', reason: 'error', endSample: 0 }); }
+    } catch { send({ type: 'error', message: 'Invalid stream request. Check the settings and restart.' }); episode?.stop(); music?.stop(); if (!episode) send({ type: 'end', reason: 'error', endSample: 0 }); }
   });
-  ws.on('close', () => { clearInterval(heartbeat); episode?.stop(); });
-  ws.on('error', () => { episode?.stop(); });
+  ws.on('close', () => { clearInterval(heartbeat); episode?.stop(); music?.stop(); });
+  ws.on('error', () => { episode?.stop(); music?.stop(); });
 });
 let vite: Awaited<ReturnType<typeof import('vite')['createServer']>> | undefined;
 if (process.argv.includes('--production')) {
@@ -88,7 +100,7 @@ if (process.argv.includes('--production')) {
   app.get('/{*path}', (_req, res) => res.sendFile(resolve(root, 'dist/index.html')));
 } else {
   const { createServer: createViteServer } = await import('vite');
-  vite = await createViteServer({ root, server: { middlewareMode: true, hmr: { server, path: '/hmr' } }, appType: 'spa' });
+  vite = await createViteServer({ root, server: { middlewareMode: true, hmr: { server, path: '/hmr' }, watch: { ignored: ['**/android/**', '**/test-results/**', '**/data/**'] } }, appType: 'spa' });
   app.use(vite.middlewares);
 }
 server.listen(port, '127.0.0.1', () => console.log(`Maestro Radio: http://127.0.0.1:${port}`));

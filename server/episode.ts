@@ -48,6 +48,14 @@ export class Episode {
   readonly folder: string;
   readonly planner: Planner;
   private playback?: PlaybackDiagnostics;
+  private musicChosen = false;
+  private chooseMusic(prompt: string, source: 'writer' | 'custom') {
+    if (!this.settings.music || this.musicChosen || !prompt) return;
+    this.musicChosen = true;
+    const event = { type: 'musicPrompt' as const, prompt, source };
+    writeFileSync(join(this.folder, 'music.json'), JSON.stringify(event, null, 2));
+    this.record(event); this.emit(event);
+  }
   constructor(readonly settings: Settings, private config: EpisodeConfig, private emit: (event: ServerEvent) => void) {
     if (!settings.topic) settings.topic = seeds[randomInt(seeds.length)];
     this.folder = join(config.dataDir, this.id);
@@ -92,6 +100,7 @@ export class Episode {
     let writer: Promise<void> | undefined;
     try {
       this.emit({ type: 'session', id: this.id, topic: this.settings.topic, plannerModel: this.config.plannerModel, liveModel: this.config.liveModel });
+      this.chooseMusic(this.settings.musicPrompt, 'custom');
       this.emit({ type: 'status', state: 'planning', detail: 'Finding the first thread' });
       await this.planner.initialize(signal);
       this.emit({ type: 'writer', model: this.planner.model });
@@ -101,6 +110,9 @@ export class Episode {
             await queue.space(signal);
             await this.gate.wait(() => pipeline.producedSamples, signal);
             const plan = await this.planner.next(signal, context);
+            signal.throwIfAborted();
+            if (plan.musicPrompt) this.chooseMusic(plan.musicPrompt, 'writer');
+            if (index === 2 && this.settings.music && !this.musicChosen) this.emit({ type: 'musicStatus', state: 'unavailable', detail: 'The writer did not supply a valid music prompt. Speech continues.' });
             this.record({ type: 'plan', index, model: this.planner.model, plan });
             await queue.put(plan, signal);
           }
