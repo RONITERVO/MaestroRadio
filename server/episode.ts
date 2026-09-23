@@ -21,13 +21,14 @@ const seeds = [
 export class PlaybackGate {
   played = 0;
   paused = false;
+  rate = 1;
   lastProgress = Date.now();
   update(played: number, paused: boolean, generated: number) {
     this.played = Math.max(this.played, Math.min(played, generated));
     this.paused = paused;
     this.lastProgress = Date.now();
   }
-  canProduce(generated: number) { return !this.paused && generated - this.played < SAMPLE_RATE * 45; }
+  canProduce(generated: number) { return !this.paused && generated - this.played < SAMPLE_RATE * 45 * this.rate; }
   async wait(generated: () => number, signal: AbortSignal) {
     while (!this.canProduce(generated())) {
       signal.throwIfAborted();
@@ -37,7 +38,8 @@ export class PlaybackGate {
     signal.throwIfAborted();
   }
 }
-export type EpisodeConfig = { plannerModel: string; liveModel: string; contextLimit: number; dataDir: string; plannerPool: KeyPool; livePool: KeyPool };
+export type EpisodeConfig = { plannerModel: string; plannerFallbackModels?: string[]; plannerTimeoutMs?: number;
+  liveModel: string; contextLimit: number; dataDir: string; plannerPool: KeyPool; livePool: KeyPool };
 export class Episode {
   readonly id = randomUUID();
   readonly controller = new AbortController();
@@ -50,14 +52,20 @@ export class Episode {
     if (!settings.topic) settings.topic = seeds[randomInt(seeds.length)];
     this.folder = join(config.dataDir, this.id);
     mkdirSync(this.folder, { recursive: true });
-    this.planner = new Planner(config.plannerModel, config.plannerPool, settings, config.contextLimit);
+    this.planner = new Planner(config.plannerModel, config.plannerPool, settings, config.contextLimit, undefined, undefined, {
+      fallbacks: config.plannerFallbackModels, timeoutMs: config.plannerTimeoutMs,
+      onSwitch: change => { this.record({ type: 'writerModel', ...change, at: new Date().toISOString() }); this.emit({ type: 'writer', model: change.to }); },
+    });
+    this.gate.rate = settings.speed;
     writeFileSync(join(this.folder, 'episode.json'), JSON.stringify({ version: 2, id: this.id, createdAt: new Date().toISOString(), settings,
-      plannerModel: config.plannerModel, liveModel: config.liveModel, sampleRate: SAMPLE_RATE }, null, 2));
+      plannerModel: config.plannerModel, plannerFallbackModels: config.plannerFallbackModels, plannerTimeoutMs: config.plannerTimeoutMs,
+      liveModel: config.liveModel, sampleRate: SAMPLE_RATE }, null, 2));
   }
   private record(event: unknown) { appendFileSync(join(this.folder, 'ledger.jsonl'), JSON.stringify(event) + '\n'); }
   stop() { this.controller.abort(new DOMException('Stopped', 'AbortError')); }
-  progress(played: number, paused: boolean, playback?: PlaybackDiagnostics) {
+  progress(played: number, paused: boolean, playback?: PlaybackDiagnostics, rate?: number) {
     this.gate.update(played, paused, this.totalSamples);
+    if (rate !== undefined) this.gate.rate = Math.min(2, Math.max(1, rate));
     if (playback) this.playback = playback;
   }
   /** maxPlans bounds writing calls for finite live verification, not individual voice turns. */
@@ -86,13 +94,14 @@ export class Episode {
       this.emit({ type: 'session', id: this.id, topic: this.settings.topic, plannerModel: this.config.plannerModel, liveModel: this.config.liveModel });
       this.emit({ type: 'status', state: 'planning', detail: 'Finding the first thread' });
       await this.planner.initialize(signal);
+      this.emit({ type: 'writer', model: this.planner.model });
       writer = (async () => {
         try {
           for (let index = 0; index < maxPlans; index++) {
             await queue.space(signal);
             await this.gate.wait(() => pipeline.producedSamples, signal);
             const plan = await this.planner.next(signal, context);
-            this.record({ type: 'plan', index, plan });
+            this.record({ type: 'plan', index, model: this.planner.model, plan });
             await queue.put(plan, signal);
           }
         } catch (error) {
@@ -129,7 +138,7 @@ export class Episode {
       this.controller.abort(); queue.close();
       await writer;
       await pipeline.settled();
-      writeFileSync(join(this.folder, 'memory.json'), JSON.stringify({ system: this.planner.system, history: this.planner.history,
+      writeFileSync(join(this.folder, 'memory.json'), JSON.stringify({ model: this.planner.model, system: this.planner.system, history: this.planner.history,
         inputTokens: this.planner.used, contextLimit: this.planner.limit, cumulativeInput: this.planner.cumulativeInput, cumulativeOutput: this.planner.cumulativeOutput }, null, 2));
       this.record({ type: 'ended', reason, generatedSamples: this.totalSamples, playedSamples: this.gate.played, playback: this.playback, at: new Date().toISOString() });
       this.emit({ type: 'end', reason, endSample: this.totalSamples });

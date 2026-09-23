@@ -8,11 +8,13 @@ import dotenv from 'dotenv';
 import { clientMessageSchema, type ServerEvent } from '../shared/protocol.ts';
 import { envKeys, parseKeys, KeyPool } from './keys.ts';
 import { Episode } from './episode.ts';
+import { writerModels } from './writer-models.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 dotenv.config({ path: [resolve(root, '.env.local'), resolve(root, '.env')], quiet: true });
 const port = Number(process.env.PORT || 4317);
-const plannerModel = process.env.PLANNER_MODEL || 'gemini-2.5-flash-lite';
+const writer = writerModels(process.env);
+const plannerModel = writer.model;
 const liveModel = process.env.LIVE_MODEL || 'gemini-2.5-flash-native-audio-preview-12-2025';
 const contextLimit = Number(process.env.CONTEXT_LIMIT || 1_048_576);
 if (!Number.isSafeInteger(contextLimit) || contextLimit < 10_000) throw new Error('CONTEXT_LIMIT must be at least 10000.');
@@ -31,7 +33,7 @@ app.use((req, res, next) => {
   res.setHeader('Referrer-Policy', 'no-referrer');
   next();
 });
-app.get('/api/config', (_req, res) => res.json({ plannerModel, liveModel, configured: plannerPool.size > 0 && livePool.size > 0,
+app.get('/api/config', (_req, res) => res.json({ plannerModel, plannerFallbackModels: writer.fallbacks, liveModel, configured: plannerPool.size > 0 && livePool.size > 0,
   plannerKeys: plannerPool.size, liveKeys: livePool.size }));
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 const server = createServer(app);
@@ -62,7 +64,7 @@ wss.on('connection', ws => {
     try {
       const message = clientMessageSchema.parse(JSON.parse(raw.toString()));
       if (message.type === 'stop') { episode?.stop(); return; }
-      if (message.type === 'progress') { episode?.progress(message.playedSamples, message.paused, message.playback); return; }
+      if (message.type === 'progress') { episode?.progress(message.playedSamples, message.paused, message.playback, message.playbackRate); return; }
       if (started) { send({ type: 'error', message: 'This connection already owns an episode.' }); return; }
       if (message.settings.target.code.split('-')[0] === message.settings.native.code.split('-')[0]) {
         send({ type: 'error', message: 'Choose different target and translation languages.' }); send({ type: 'end', reason: 'error', endSample: 0 }); return;
@@ -72,7 +74,7 @@ wss.on('connection', ws => {
         send({ type: 'error', message: 'Add a Gemini API key in settings or .env.' }); send({ type: 'end', reason: 'error', endSample: 0 }); return;
       }
       started = true;
-      episode = new Episode(message.settings, { plannerModel, liveModel, contextLimit,
+      episode = new Episode(message.settings, { plannerModel, plannerFallbackModels: writer.fallbacks, plannerTimeoutMs: writer.timeoutMs, liveModel, contextLimit,
         dataDir: resolve(root, process.env.DATA_DIR || 'data'), plannerPool: byok ?? plannerPool, livePool: byok ?? livePool }, send);
       void episode.run().catch(() => send({ type: 'error', message: 'The local episode archive could not be written. Check disk access.' }));
     } catch { send({ type: 'error', message: 'Invalid stream request. Check the settings and restart.' }); episode?.stop(); if (!episode) send({ type: 'end', reason: 'error', endSample: 0 }); }

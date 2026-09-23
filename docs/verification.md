@@ -1,5 +1,52 @@
 # Verification — 2026-09-23
 
+## Flash writer defaults and model fallbacks
+
+The default writer is now **gemini-2.5-flash, thinking disabled**. The ordered fallbacks are **gemini-3-flash-preview, minimal thinking**, then **gemini-2.5-flash-lite, thinking disabled**. Each model attempt has a 12-second default deadline, including key rotation and token counting. The current successful route remains active for the episode. Model switches appear in Settings and the archive; the complete ledger and original response signatures are retained and counted against the replacement's actual context limit.
+
+The comparison used the real planner, two consecutive passages per case, and factual Spanish/English plus expressive Spanish/Finnish fiction. Failed cases are retained alongside successes. Results are small account-specific samples, not general model benchmarks:
+
+| Writer / thinking | Observed result | Decision |
+| --- | --- | --- |
+| 2.5 Flash / off | Six accepted passages in 2.181–2.713 s across two projects; two other project keys returned 404 | Primary; key rotation handles unavailable projects |
+| 3 Flash preview / minimal | One passage at 2.979 s; another at 63.592 s; subsequent passages hit request deadlines | Bounded fallback, never an unlimited wait |
+| 2.5 Flash-Lite / off | Earlier fixed-prompt sample 1.718 s; all four current project keys now report daily exhaustion | Emergency fallback when quota is available |
+| 3.1 Flash-Lite / minimal | Service failures (503) on all four tested project keys | Configurable, excluded from defaults |
+| 3.8 Flash / low | Service failures (503) on all four tested project keys | Configurable, excluded from defaults |
+| 3.5 Flash-Lite / minimal | Prior completed samples 35.206–35.590 s; both new real-planner cases hit request deadlines | Configurable, excluded from defaults |
+
+The supplied AI Studio screenshot shows 500 RPD / 15 RPM for both 3.1 and 3.5 Flash-Lite in that project, and 20 RPD for the listed full Flash models. These are that project's displayed allowances, not inferred limits for all keys. Higher allowance alone did not establish usable latency in this comparison. Comparison evidence: ignored `test-results/model-comparison-1790180005106`, `1790180085566`, `1790180240115`, and `1790180316761` (the latter three have the same directory prefix).
+
+The full pipeline was then tested with 2.5 Flash writing an expressive Spanish/Finnish folk tale at **2×**. All three plans / seven voice turns completed, producing **130.68 source seconds**; first scheduled playback was **8.179 s**. It recorded **one 20.393-second underrun**. The third voice turn's first private render was rejected for transcript coverage and regenerated, taking 27.444 seconds across both attempts; subsequent audio delivery could not recover the already-heard gap. This is a remaining Live transcript-repair/startup-reserve limit, not evidence of gap-free realtime playback. Six turns had 100% transcript coverage and one had 89.36%; planned captions were never substituted. Archive: `test-results/soak/a9a76f09-228b-4db8-b771-c61a484a5dca`.
+
+A forced live fallback test began on daily-exhausted **2.5 Flash-Lite** and automatically switched to **2.5 Flash**. It completed two plans / five voice turns, generated **84.12 seconds** of audio at 1× scheduling, and recorded **zero underruns and 100% transcript coverage for every turn**. The switch and final active writer are archived in `test-results/soak/a02a8b8a-a5e0-469c-a362-5390886d161b`. This scheduler soak stops after generation completes; earlier source audio was played in real time, with the final queued tail not independently heard by the runner. Spot checking that bicycle script also found a translation drift between “lean” and “steer”; language and coverage checks do not prove semantic or factual accuracy.
+
+All **54 tests**, TypeScript checking and production build pass. New tests exercise model/key fallback with complete history and signatures, actual context limits after handoff, deadline/late-response handling, metadata access failures, cancellation, pinned-model configuration and invalid requests. Desktop/mobile Settings show the current writer and fallback list without horizontal overflow. The local app's `.env` uses the new primary and fallbacks; credentials remain unchanged and ignored.
+
+## Independent-project key routing and a fresh 3.5 check
+
+All **47 tests** and the TypeScript/production build pass. New key-pool regressions cover reaching an available twelfth key immediately after eleven rate limits, separate writer/Live cooldowns, model-specific access failures, provider RetryInfo, bounded retry, cancellation during cooldown, idle-project preference under concurrency, and a late success not erasing a newer rate limit. Daily-quota tests cover reusing cooldown state across requests and Pacific-midnight resets through both daylight-saving transitions.
+
+A finite, credential-redacted check of the four locally configured project keys returned `429` for each on `gemini-2.5-flash-lite`. Each response explicitly identified `GenerateRequestsPerDayPerProjectPerModel-FreeTier` with a limit of **20**. The response also suggested retrying in 36–37 seconds, which does not reset a daily quota. The pool now recognizes that distinction and parks each affected key/model until midnight Pacific. This is a reading of these projects' actual responses, not a universal quota claim.
+
+The writer and Live narrator now obtain independent model-specific state from their shared key list. A daily-exhausted writer key can still be used for Live; keys from other projects are tried before any cooldown wait. The former eight-attempt cap is replaced by one opportunity per available configured key plus at most two extra attempts, with no more than 60 seconds of cooldown waiting in one request. Availability is learned from request results, not a preflight remaining-quota API.
+
+A fresh **3.5 Flash-Lite / minimal thinking** benchmark on one key measured **34.227 seconds to first text, 35.206 seconds total** for four bilingual pairs (580 input tokens, 273 output tokens; no separate thinking-token count reported). A second key returned **503** after about eight seconds. The earlier minimal-thinking sample was 35.590 seconds total. These samples do not demonstrate reliable realtime writing, especially at 2× playback, and do not justify changing the default. A successful request does not disclose this model's daily allowance; effective limits must be read for the project in AI Studio. The benchmark now accepts `BENCH_KEY_INDEX` and preserves timestamped results rather than overwriting earlier evidence.
+
+## Playback speed, storytelling style and vocal directions
+
+TypeScript check, production build and **38 tests** pass; the production dependency audit reports zero vulnerabilities. Added regressions cover source-sample mapping across speed changes, changing speed while paused, retaining the same wall-clock production reserve at 2×, split vocal tags in actual transcripts, repetition checks that ignore delivery tags, and fresh story events under a recurring title.
+
+Browser rendering of a 440 Hz reference tone through the real SoundTouch worklet preserved **440 Hz at 1×, 1.5× and 2×**. A two-second source tone lasted approximately 2.00, 1.33 and 0.99 seconds respectively. The processor measured 99–141 ms of buffering delay, which is subtracted from the caption clock. These measurements establish pitch/duration behavior; they are not a subjective assessment of voice quality.
+
+A production-browser replay of the existing Spanish/Finnish archive `5d51036e-ecb7-4d5d-9b94-059a44c5e170` played all **334.04 source seconds / 15 turns**, with **zero scheduling underruns, zero gap milliseconds and zero stream errors**. The run changed 1× → 2×, paused, changed to 1.5× while paused, then resumed to completion. A three-second sample at 2× advanced the audible source clock at **2.003×** wall time. Captions stayed frozen during pause and after completion. A separate rapid-change check exercised 2× → 1.25× → 1.75× → 1× and End without errors. Mobile setup and transport checks at 390 × 844 had no horizontal overflow. Replay uses recorded PCM and actual captions; it does not test live provider throughput.
+
+The Flash-Lite 2.5 writer produced a requested second-person comic folk tale with matching Spanish/English vocal directions. This exposed an overstrict repetition check: several fresh passages reused the whole story/style as their angle. An angle-only repeat no longer rejects fresh events; repeated facts and exact/near-identical spoken sentences remain rejected.
+
+A finite Live A/B reused the writer's `[curious]` fox sentence and English translation. Both versions had **100% per-line transcript coverage**. Neutral generated 11.60 seconds of audio in 8.883 seconds; expressive generated 11.48 seconds in 7.348 seconds. The expressive output transcript included bracketed metadata, which the caption adapter removes. Local audio and raw evidence are in `test-results/voice-experiment-1790178526307/`. Requests are stochastic, and transcript coverage alone cannot establish perceived emotion or independently prove what the waveform contains; the two WAVs are provided for listening.
+
+Earlier live story attempts encountered a missing native-language transcript (caught before publication) and writer quota failures. A later browser story accepted two voice turns with full coverage before hitting quota. The final three-batch, expressive 2× soak (`cd0cc18c-7ac9-4d84-b5c0-ed1a61a2d8e3`) stopped at the writer quota with no audio. **Sustained live generation at 2× is therefore unverified on this account.** The speed-aware reserve, player replay and separate tagged Live request passed; those do not remove this provider limitation.
+
 ## Continuity refinement
 
 TypeScript check, production build, **32 tests**, and the production dependency audit pass (zero reported vulnerabilities). New tests exercise ordered concurrent readers, discarded private attempts, bounded queues, language reversal, generation completion, output-clock diagnostics, and an observed 31-second delivery stall.

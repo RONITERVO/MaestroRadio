@@ -28,6 +28,12 @@
               <label><span class="field-label">TRANSLATE INTO</span><select id="native" aria-label="Translation language"></select></label>
               <label class="level-field"><span class="field-label">LEVEL</span><select id="level" aria-label="Learning level"><option>A1</option><option>A2</option><option selected>B1</option><option>B2</option><option>C1</option></select></label>
             </div>
+            <details class="style-options"><summary>Style & expression <span>optional</span></summary>
+              <label class="field-label" for="style">HOW SHOULD IT FEEL?</label>
+              <textarea id="style" rows="2" maxlength="1200" placeholder="Make me the main character in a funny folk tale…"></textarea>
+              <div class="style-presets"><button type="button" data-style="Make me the main character, narrating my adventure in the second person.">I’m the main character</button><button type="button" data-style="Tell it as a whimsical folk tale, with recurring characters and gentle humor.">Folk tale</button><button type="button" data-style="Make it a playful comedy with dry humor, escalating mishaps and callbacks.">Comedy</button></div>
+              <label class="expression-option"><input id="expressive" type="checkbox" /> Expressive voice <span>Curiosity, whispers, a quiet laugh.</span></label>
+            </details>
             <button class="begin" type="submit" id="begin">Begin listening <span aria-hidden="true">↗</span></button>
             <p class="start-note" id="key-note">Your curiosity. Your pace. Your API key.</p>
           </form>
@@ -42,7 +48,7 @@
       <div id="notice" class="notice" role="status" hidden></div>
       <footer id="idle-footer"><span>LEARNING, WITHOUT THE LESSON.</span><span>BYOK · LOCAL FIRST</span></footer>
       <div id="transport" class="transport" hidden>
-        <div class="transport-inner"><button id="pause" aria-label="Pause playback">Ⅱ</button><div class="playing-meta"><span id="status">Connecting</span><span id="elapsed">00:00</span></div><div class="context-meter" title="Complete episode memory"><span id="context-label">MEMORY</span><div><i id="context-fill"></i></div></div><button id="export" class="quiet-button" title="Export the spoken transcript">Save text</button><button id="stop" class="quiet-button">End <span aria-hidden="true">■</span></button></div>
+        <div class="transport-inner"><button id="pause" aria-label="Pause playback">Ⅱ</button><div class="playing-meta"><span id="status">Connecting</span><span id="elapsed">00:00</span></div><select id="playback-speed" class="speed-control" aria-label="Playback speed"><option value="1">1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="1.75">1.75×</option><option value="2">2×</option></select><div class="context-meter" title="Complete episode memory"><span id="context-label">MEMORY</span><div><i id="context-fill"></i></div></div><button id="export" class="quiet-button" title="Export the spoken transcript">Save text</button><button id="stop" class="quiet-button">End <span aria-hidden="true">■</span></button></div>
       </div>
       <dialog id="settings-dialog">
         <form id="settings-form" method="dialog">
@@ -52,6 +58,8 @@
           <p class="help">Keys stay in this tab’s memory and are sent to your local server. They are never saved in the browser or episode files. Pasted keys replace the server key pool for this episode.</p>
           <div class="settings-grid"><label><span class="field-label">VOICE</span><select id="voice"><option>Kore</option><option>Puck</option><option>Charon</option><option>Fenrir</option><option>Aoede</option><option>Leda</option><option>Orus</option><option>Zephyr</option></select></label><label><span class="field-label">PLAYBACK BUFFER</span><select id="buffer"><option value="400" selected>0.4 seconds</option><option value="700">0.7 seconds</option><option value="1400">1.4 seconds</option><option value="2500">2.5 seconds</option><option value="4000">4 seconds</option></select></label></div>
           <p class="help">A little breathing room lets the transcript arrive before you hear it. Settings apply to your next episode.</p>
+          <label class="speed-setting"><span class="field-label">PLAYBACK SPEED</span><select id="speed" class="speed-control"><option value="1">1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="1.75">1.75×</option><option value="2">2×</option></select></label>
+          <p class="help">Speed changes immediately, keeping the voice’s pitch and the transcript together.</p>
           <div id="model-info" class="model-info"></div>
           <button class="begin" value="save">Done <span aria-hidden="true">↗</span></button>
         </form>

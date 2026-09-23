@@ -4,6 +4,7 @@ import { writeFileSync, readFileSync } from 'node:fs';
 import { Episode } from '../server/episode.ts';
 import { KeyPool, envKeys, safeError } from '../server/keys.ts';
 import { settingsSchema } from '../shared/protocol.ts';
+import { writerModels } from '../server/writer-models.ts';
 
 const envIndex = process.argv.indexOf('--env');
 dotenv.config({ path: envIndex >= 0 ? resolve(process.argv[envIndex + 1]) : resolve('.env'), quiet: true });
@@ -18,7 +19,8 @@ const timeline: { type: string; ms: number; turn?: number }[] = [];
 const pool = new KeyPool(keys);
 const settings = settingsSchema.parse({ topic: 'Explain the surprising journey of a drop of water through a forest, with concrete scientific details.',
   target: { name: 'Spanish', code: 'es-ES' }, native: { name: 'English', code: 'en-US' }, level: 'B1' });
-const episode = new Episode(settings, { plannerModel: process.env.PLANNER_MODEL || 'gemini-2.5-flash-lite',
+const writer = writerModels(process.env);
+const episode = new Episode(settings, { plannerModel: writer.model, plannerFallbackModels: writer.fallbacks, plannerTimeoutMs: writer.timeoutMs,
   liveModel: process.env.LIVE_MODEL || 'gemini-2.5-flash-native-audio-preview-12-2025', contextLimit: 1_048_576,
   dataDir: resolve('test-results/live'), plannerPool: pool, livePool: pool }, event => {
   if (event.type === 'audio') {

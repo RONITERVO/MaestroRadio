@@ -1,5 +1,6 @@
 import type { Cue, Line } from '../shared/protocol.ts';
 import { fingerprint } from './planner.ts';
+import { stripVoiceTags } from '../shared/voice-tags.ts';
 
 type Token = { text: string; key: string; line: number };
 function tokens(text: string): string[] {
@@ -17,7 +18,7 @@ export class TranscriptClock {
   private matched = new Set<number>();
   readonly cues: Cue[] = [];
   constructor(private lines: Line[], private emit: (cue: Cue) => void) {
-    this.expected = lines.flatMap((line, index) => tokens(line.text).filter(t => fingerprint(t)).map(text => ({ text, key: fingerprint(text), line: index })));
+    this.expected = lines.flatMap((line, index) => tokens(stripVoiceTags(line.text)).filter(t => fingerprint(t)).map(text => ({ text, key: fingerprint(text), line: index })));
   }
   add(fragment: string, samples: number) {
     this.raw += fragment;
@@ -45,7 +46,7 @@ export class TranscriptClock {
       if (last?.isWordLike) safeEnd = last.index;
     }
     this.tail = text.slice(safeEnd);
-    text = text.slice(0, safeEnd).replace(/\[[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*\]/g, '');
+    text = stripVoiceTags(text.slice(0, safeEnd)).replace(/\[[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*\]/g, '');
     for (const token of tokens(text)) {
       const key = fingerprint(token);
       if (key) {
