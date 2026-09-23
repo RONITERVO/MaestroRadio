@@ -12,7 +12,7 @@ import { Episode } from './episode.ts';
 const root = fileURLToPath(new URL('../', import.meta.url));
 dotenv.config({ path: [resolve(root, '.env.local'), resolve(root, '.env')], quiet: true });
 const port = Number(process.env.PORT || 4317);
-const plannerModel = process.env.PLANNER_MODEL || 'gemini-3.5-flash-lite';
+const plannerModel = process.env.PLANNER_MODEL || 'gemini-2.5-flash-lite';
 const liveModel = process.env.LIVE_MODEL || 'gemini-2.5-flash-native-audio-preview-12-2025';
 const contextLimit = Number(process.env.CONTEXT_LIMIT || 1_048_576);
 if (!Number.isSafeInteger(contextLimit) || contextLimit < 10_000) throw new Error('CONTEXT_LIMIT must be at least 10000.');
@@ -62,7 +62,7 @@ wss.on('connection', ws => {
     try {
       const message = clientMessageSchema.parse(JSON.parse(raw.toString()));
       if (message.type === 'stop') { episode?.stop(); return; }
-      if (message.type === 'progress') { episode?.progress(message.playedSamples, message.paused); return; }
+      if (message.type === 'progress') { episode?.progress(message.playedSamples, message.paused, message.playback); return; }
       if (started) { send({ type: 'error', message: 'This connection already owns an episode.' }); return; }
       if (message.settings.target.code.split('-')[0] === message.settings.native.code.split('-')[0]) {
         send({ type: 'error', message: 'Choose different target and translation languages.' }); send({ type: 'end', reason: 'error', endSample: 0 }); return;

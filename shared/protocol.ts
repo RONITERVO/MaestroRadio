@@ -7,7 +7,7 @@ export const settingsSchema = z.object({
   native: languageSchema.default({ name: 'English', code: 'en-US' }),
   level: z.enum(['A1', 'A2', 'B1', 'B2', 'C1']).default('B1'),
   voice: z.enum(['Kore', 'Puck', 'Charon', 'Fenrir', 'Aoede', 'Leda', 'Orus', 'Zephyr']).default('Kore'),
-  bufferMs: z.number().int().min(200).max(5000).default(1400),
+  bufferMs: z.number().int().min(200).max(5000).default(400),
 });
 export type Settings = z.infer<typeof settingsSchema>;
 export const planSchema = z.object({
@@ -29,9 +29,12 @@ export type ServerEvent =
   | { type: 'turnEnd'; turn: number; endSample: number; coverage: number }
   | { type: 'end'; reason: string; endSample: number }
   | { type: 'error'; message: string };
+const playbackDiagnosticsSchema = z.object({ firstStartSeconds: z.number().nonnegative(), underruns: z.number().int().nonnegative(),
+  totalGapMs: z.number().nonnegative(), maxGapMs: z.number().nonnegative(), peakBufferedMs: z.number().nonnegative(), bufferedMs: z.number().nonnegative() });
+export type PlaybackDiagnostics = z.infer<typeof playbackDiagnosticsSchema>;
 export const clientMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('start'), settings: settingsSchema, keys: z.array(z.string().trim().min(10).max(256)).max(100).default([]) }),
-  z.object({ type: z.literal('progress'), playedSamples: z.number().int().nonnegative(), paused: z.boolean() }),
+  z.object({ type: z.literal('progress'), playedSamples: z.number().int().nonnegative(), paused: z.boolean(), playback: playbackDiagnosticsSchema.optional() }),
   z.object({ type: z.literal('stop') }),
 ]);
 export function linesFor(plan: Plan, settings: Settings): Line[] {

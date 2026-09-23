@@ -1,14 +1,35 @@
 {
-  "name": "maestro-radio", "version": "0.1.0", "private": true, "type": "module",
-  "engines": { "node": ">=22.13.0" },
+  "name": "maestro-radio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "scripts": {
     "dev": "tsx watch server/index.ts",
     "start": "tsx server/index.ts --production",
     "build": "tsc --noEmit && vite build",
     "check": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
-    "smoke": "tsx scripts/smoke.ts"
+    "smoke": "tsx scripts/smoke.ts",
+    "test:soak": "tsx scripts/soak.ts",
+    "bench:writer": "tsx scripts/bench-writer.ts"
   },
-  "dependencies": { "@google/genai": "^2.13.0", "dotenv": "^17.2.3", "express": "^5.1.0", "ws": "^8.18.3", "zod": "^4.1.12" },
-  "devDependencies": { "@types/express": "^5.0.5", "@types/node": "^22.19.0", "@types/ws": "^8.18.1", "tsx": "^4.20.6", "typescript": "^5.9.3", "vite": "^7.2.2" }
+  "dependencies": {
+    "@google/genai": "^2.13.0",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "franc": "^6.2.0",
+    "ws": "^8.18.3",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.5",
+    "@types/node": "^22.19.0",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vite": "^7.2.2"
+  }
 }

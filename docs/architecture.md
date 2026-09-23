@@ -8,21 +8,27 @@ The writer's structured output is intentionally not rendered. Only observed outp
 
 ## Continuity without an infinite-memory claim
 
-The full ledger is carried as model/user history, with fixed podcast instructions in the system prompt. No rolling summary replaces it. Exact/near-duplicate gates complement model reasoning. The bounded prefetch is provisional until the current voice passage passes its transcript checks. Token counting stops the run with an explicit `context-full` event.
+The full ledger is carried as model/user history, with fixed podcast instructions in the system prompt. No rolling summary replaces it. Exact/near-duplicate gates complement model reasoning. Explicit language fields and a conservative local detector catch obvious reversals. Each prefetched voice passage remains private until it passes its own transcript checks. Token counting stops the run with an explicit `context-full` event.
 
 This retains all history in the request; it cannot guarantee perfect semantic recall or eliminate every loop. A later version could add an embedding-based fact ledger for additional semantic duplicate detection, while retaining the full original history as requested.
 
 ## Latency and cost
 
-Fresh Live connections give strong isolation and allow a complete script in the system prompt, as MaestroTutor does. They add connection overhead. A single persistent connection would be cheaper to open, but would need client-content script updates, change the established TTS behavior, and eventually require resumption/compression. The current implementation chooses short independent narration turns with bounded lookahead.
+Fresh Live connections give strong isolation and allow a complete script in the system prompt, as MaestroTutor does. Two concurrent readers hide connection overhead while preserving script order. The writer has a separate single-entry queue. A 45-second production threshold plus at most two in-flight passages bounds audio lookahead; pause prevents starting further work.
 
-The initial tests show writer latency dominates startup. The next useful optimization is a streaming writer that admits a validated first bilingual pair before the entire structured batch finishes. That requires careful partial-JSON admission and voice grouping; it is not simulated by showing unspoken planner output.
+The writer benchmark favored Flash-Lite 2.5: a full four-pair batch completed in 1.7 seconds versus 35.6 seconds for 3.5. Partial JSON admission would save little on that measured 2.5 response and add another validation boundary. The complete plan is therefore validated before narration.
+
+Live's `generationComplete` closes each reader promptly. Waiting for `turnComplete` unnecessarily held the next passage behind the provider's assumed playback clock. The API guarantees the final output transcript precedes generation completion. Actual cues are still anchored to the received PCM cursor, with no final-duration normalization.
+
+Controlled reproduction found language-code markers could cause missing transcript spans even when repeated renders produced audio of similar duration. The normal prompt uses plain bilingual sentences and explicitly requests complete original-language transcription. A short opening pair limits startup checking time. Subsequent turns contain at most two pairs; no line quota is sent to Live. Every turn is checked before publication, with bounded private retries and a marked-script fallback. Failed attempts remain recorded but never reach the listener. This adds initial waiting time in exchange for preventing incomplete passages from becoming visible or audible.
+
+The browser schedules all accepted PCM contiguously and gradually reveals the actual words against its audible output clock. Diagnostics use a read-only buffer calculation so they cannot accidentally advance captions. Background planning and natural breaths do not toggle loading indicators; follow-scrolling uses a small per-frame step and yields to manual scrolling.
 
 Long full-context sessions incur increasing input costs. Explicit prompt caching could reduce this for suitably sized stable prefixes, but cache resources are project-specific and interact with key failover. This version uses ordinary requests, exposes cumulative usage, and does not promise cache savings.
 
 ## References inspected on 2026-09-23
 
-- [MaestroTutor](https://github.com/RONITERVO/MaestroTutor), local checkout commit `36d338243411656f7f085eaeaed172253ef3d780`: `src/core-sdk/media/triggeredTts.ts`, `src/features/speech/services/geminiLiveTts.ts`, `public/gemini-models.json`. The voice instruction is adapted from its Apache-2.0 prompt. The language markers are silent metadata; the app falls back to forward text matching for line boundaries when output transcription omits them.
+- [MaestroTutor](https://github.com/RONITERVO/MaestroTutor), local checkout commit `36d338243411656f7f085eaeaed172253ef3d780`: `src/core-sdk/media/triggeredTts.ts`, `src/features/speech/services/geminiLiveTts.ts`, `public/gemini-models.json`. The voice instruction is adapted from its Apache-2.0 prompt. Actual words are matched forward to locate target/native rows; the plan is never used as substitute captions.
 - [Spanish Quick Apps](https://github.com/RONITERVO/Spanish-Quick-Apps), local checkout commit `21a6ff75df64412c269489f177e8ddbad837c044`: `learning-narration.js` and `docs/syncvoice-production.md`. Used the audio-clock-driven character-reveal principle.
 - Local SyncVoice: `lib/client/gemini-tts.ts`, `agent/gemini-tts.mjs`, and `app/tts-studio.tsx`. Used observed sample positions, without a final-duration normalization pass or scripted-caption fallback.
 - [Gemini 3.5 Flash-Lite](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite): published 1,048,576 input-token limit, structured output, caching, text-only output.

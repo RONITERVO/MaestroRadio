@@ -1,4 +1,5 @@
 import { GoogleGenAI, Modality, type LiveConnectConfig, type LiveConnectParameters, type Session } from '@google/genai';
+import { randomInt } from 'node:crypto';
 import type { Cue, Line } from '../shared/protocol.ts';
 import { PublicError, errorStatus } from './keys.ts';
 import { voiceInstruction } from './prompts.ts';
@@ -6,12 +7,12 @@ import { TranscriptClock } from './transcript.ts';
 
 export type LiveResult = { transcript: string; samples: number; coverage: number; lineCoverage: number[]; cues: Cue[] };
 export type LiveOptions = { key: string; model: string; voice: string; lines: Line[]; signal: AbortSignal;
-  onAudio: (data: string, startSample: number) => void; onCue: (cue: Cue) => void; timeoutMs?: number;
+  onAudio: (data: string, startSample: number) => void; onCue: (cue: Cue) => void; timeoutMs?: number; plainText?: boolean;
   connect?: (params: LiveConnectParameters) => Promise<Session> };
-export function liveConfig(model: string, voice: string, lines: Line[]): LiveConnectConfig {
+export function liveConfig(model: string, voice: string, lines: Line[], plainText = true): LiveConnectConfig {
   return { responseModalities: [Modality.AUDIO], outputAudioTranscription: {},
     speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },
-    systemInstruction: voiceInstruction(lines),
+    systemInstruction: voiceInstruction(lines, plainText),
     ...(model.startsWith('gemini-2.5-') ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
   };
 }
@@ -40,7 +41,7 @@ export async function narrate(options: LiveOptions): Promise<LiveResult> {
     }
     const ai = new GoogleGenAI({ apiKey: options.key, httpOptions: { apiVersion: 'v1alpha' } });
     const connect = options.connect ?? ((params: LiveConnectParameters) => ai.live.connect(params));
-    void connect({ model: options.model, config: liveConfig(options.model, options.voice, options.lines),
+    void connect({ model: options.model, config: { ...liveConfig(options.model, options.voice, options.lines, options.plainText), seed: randomInt(2_147_483_647) },
       callbacks: {
         onopen() {},
         onmessage(message) {
@@ -61,7 +62,9 @@ export async function narrate(options: LiveOptions): Promise<LiveResult> {
               if (samples > 24_000 * 100) throw new PublicError('The voice exceeded the short-passage limit.');
             }
             if (content?.outputTranscription?.text) clock.add(content.outputTranscription.text, samples);
-            if (content?.turnComplete) finish();
+            // All output transcripts precede generationComplete. turnComplete may wait for
+            // simulated real-time playback; our browser owns playback and needs the next turn now.
+            if (content?.generationComplete || content?.turnComplete) finish();
           } catch (error) { finish(error); }
         },
         onerror(event) { finish(new Error(event.message || 'Live connection failed')); },

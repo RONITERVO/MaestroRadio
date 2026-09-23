@@ -45,15 +45,20 @@ let elements = new Map<string, HTMLElement>();
 let currentLine = '';
 let follow = true;
 let episodeId = '';
-let lastTextAt = 0;
+let lastAutoScroll = 0;
 let endedWithError = false;
 
 function notice(message: string) { $('notice').textContent = message; $('notice').hidden = false; }
-function setStatus(text: string) { $('status').textContent = text; }
+function setStatus(text: string) { if ($('status').textContent !== text) $('status').textContent = text; }
 function sendProgress() {
-  if (socket?.readyState === WebSocket.OPEN && player) socket.send(JSON.stringify({ type: 'progress', playedSamples: player.playedSamples, paused: player.paused || player.context.state !== 'running' }));
+  if (socket?.readyState === WebSocket.OPEN && player) socket.send(JSON.stringify({ type: 'progress', playedSamples: player.playedSamples, paused: player.paused || player.context.state !== 'running', playback: player.diagnostics }));
 }
-window.addEventListener('scroll', () => { follow = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 180; }, { passive: true });
+window.addEventListener('scroll', () => {
+  if (performance.now() - lastAutoScroll > 100) follow = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 100;
+}, { passive: true });
+window.addEventListener('wheel', event => { if (event.deltaY < 0) follow = false; }, { passive: true });
+window.addEventListener('touchmove', () => { follow = false; }, { passive: true });
+window.addEventListener('keydown', event => { if (['ArrowUp','PageUp','Home'].includes(event.key)) follow = false; });
 function reveal(turn: number, cue: Cue, text: string) {
   if (!text) return;
   $('episode-topic').parentElement!.hidden = true;
@@ -65,12 +70,13 @@ function reveal(turn: number, cue: Cue, text: string) {
     element.className = `spoken-line ${cue.kind}`;
     element.lang = $<HTMLSelectElement>(cue.kind === 'target' ? 'target' : 'native').value;
     element.dir = 'auto';
+    element.append(document.createTextNode(''));
     $('transcript').append(element); elements.set(key, element);
     revealed.push({ turn, line: cue.line, kind: cue.kind, text: '' });
     // Bound the rendered history, retain the complete spoken text for export.
     if (elements.size > 120) { const first = elements.keys().next().value!; elements.get(first)?.remove(); elements.delete(first); }
   }
-  element.append(document.createTextNode(text));
+  (element.firstChild as Text).appendData(text);
   const record = revealed[revealed.length - 1];
   if (record.turn === turn && record.line === cue.line) record.text += text;
   if (currentLine !== key) {
@@ -78,8 +84,6 @@ function reveal(turn: number, cue: Cue, text: string) {
     const all = [...elements.values()];
     all.forEach((item, index) => item.classList.toggle('older', index < all.length - 2));
   }
-  lastTextAt = performance.now();
-  if (follow) element.scrollIntoView({ block: 'nearest', behavior: 'instant' });
 }
 function tick() {
   if (!player || !active) return;
@@ -96,9 +100,19 @@ function tick() {
     cueChars = 0; cueIndex++;
   }
   if (cueIndex > 500) { cues.splice(0, cueIndex); cueIndex = 0; }
+  if (follow && !player.paused) {
+    const remaining = Math.max(0, document.documentElement.scrollHeight - innerHeight) - scrollY;
+    if (Math.abs(remaining) > 1) {
+      lastAutoScroll = performance.now();
+      const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      window.scrollTo(0, scrollY + (reduced ? remaining : remaining * 0.12));
+    }
+  }
   const seconds = Math.floor(sample / SAMPLE_RATE);
   $('elapsed').textContent = `${String(Math.floor(seconds / 60)).padStart(2,'0')}:${String(seconds % 60).padStart(2,'0')}`;
-  $('waiting').hidden = player.paused || performance.now() - lastTextAt < 1800 || !!ending;
+  // Natural spoken breaths and background planning should not flash a loading indicator.
+  $('waiting').hidden = player.paused || sample > 0 || !!ending;
+  if (!player.paused && !endedWithError && sample > 0) setStatus('On air');
   if (ending && sample >= ending.sample) { complete(); return; }
   animation = requestAnimationFrame(tick);
 }
@@ -145,7 +159,7 @@ async function start(random: boolean) {
   const settings: Settings = { topic: random ? '' : $<HTMLInputElement>('topic').value, target, native,
     level: $<HTMLSelectElement>('level').value as Settings['level'], voice: $<HTMLSelectElement>('voice').value as Settings['voice'], bufferMs: Number($<HTMLSelectElement>('buffer').value) };
   cues = []; cueIndex = 0; cueChars = 0; revealed = []; elements.clear(); currentLine = ''; ending = undefined;
-  endedWithError = false; follow = true; lastTextAt = performance.now(); episodeId = '';
+  endedWithError = false; follow = true; episodeId = '';
   $('transcript').replaceChildren(); $('notice').hidden = true;
   player = new StreamPlayer(settings.bufferMs);
   starting = true;
