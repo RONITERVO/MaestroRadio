@@ -17,7 +17,9 @@ export class NarrationPipeline {
   private jobs = new Set<Promise<void>>();
   private requests = new Set<Promise<unknown>>();
   private pulse = new Pulse();
-  constructor(private options: Options, private synthesize: (options: LiveOptions) => Promise<LiveResult> = narrate) {}
+  constructor(private options: Options, private synthesize: (options: LiveOptions) => Promise<LiveResult> = narrate) {
+    this.options = { ...options, pool: options.pool.forModel(options.model) };
+  }
   get pending() { return this.jobs.size; }
   async slot() {
     while (this.jobs.size >= 2) await this.pulse.wait(this.options.signal);

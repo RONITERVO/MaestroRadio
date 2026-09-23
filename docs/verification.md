@@ -1,5 +1,15 @@
 # Verification — 2026-09-23
 
+## Independent-project key routing and a fresh 3.5 check
+
+All **47 tests** and the TypeScript/production build pass. New key-pool regressions cover reaching an available twelfth key immediately after eleven rate limits, separate writer/Live cooldowns, model-specific access failures, provider RetryInfo, bounded retry, cancellation during cooldown, idle-project preference under concurrency, and a late success not erasing a newer rate limit. Daily-quota tests cover reusing cooldown state across requests and Pacific-midnight resets through both daylight-saving transitions.
+
+A finite, credential-redacted check of the four locally configured project keys returned `429` for each on `gemini-2.5-flash-lite`. Each response explicitly identified `GenerateRequestsPerDayPerProjectPerModel-FreeTier` with a limit of **20**. The response also suggested retrying in 36–37 seconds, which does not reset a daily quota. The pool now recognizes that distinction and parks each affected key/model until midnight Pacific. This is a reading of these projects' actual responses, not a universal quota claim.
+
+The writer and Live narrator now obtain independent model-specific state from their shared key list. A daily-exhausted writer key can still be used for Live; keys from other projects are tried before any cooldown wait. The former eight-attempt cap is replaced by one opportunity per available configured key plus at most two extra attempts, with no more than 60 seconds of cooldown waiting in one request. Availability is learned from request results, not a preflight remaining-quota API.
+
+A fresh **3.5 Flash-Lite / minimal thinking** benchmark on one key measured **34.227 seconds to first text, 35.206 seconds total** for four bilingual pairs (580 input tokens, 273 output tokens; no separate thinking-token count reported). A second key returned **503** after about eight seconds. The earlier minimal-thinking sample was 35.590 seconds total. These samples do not demonstrate reliable realtime writing, especially at 2× playback, and do not justify changing the default. A successful request does not disclose this model's daily allowance; effective limits must be read for the project in AI Studio. The benchmark now accepts `BENCH_KEY_INDEX` and preserves timestamped results rather than overwriting earlier evidence.
+
 ## Playback speed, storytelling style and vocal directions
 
 TypeScript check, production build and **38 tests** pass; the production dependency audit reports zero vulnerabilities. Added regressions cover source-sample mapping across speed changes, changing speed while paused, retaining the same wall-clock production reserve at 2×, split vocal tags in actual transcripts, repetition checks that ignore delivery tags, and fresh story events under a recurring title.

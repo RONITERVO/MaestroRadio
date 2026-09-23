@@ -43,7 +43,9 @@ GEMINI_API_KEY37=another-key
 
 Optional `PLANNER_API_KEYS` and `LIVE_API_KEYS` give the writer and narrator separate pools. Browser-pasted keys replace both pools for that connection and remain only in tab/server memory. Keys are never included in episode files, URLs, localStorage, or client bundles.
 
-Pool behavior: deduplication, rotation, invalid-key quarantine, exponential cooldown, bounded retries, and cancellation. Incomplete voice attempts are retried privately before publication; already published speech is never replayed. **Google quotas apply per project, not per key**; extra keys in one project do not create extra quota.
+Pool behavior: deduplication, rotation, model-specific access quarantine and cooldowns, bounded retries, and cancellation. Available keys are tried immediately; waiting happens only when every usable key for that model is cooling down. Every configured key can be tried, including pools larger than eight keys. Concurrent requests prefer idle keys, and a writer quota failure does not prevent using that key for Live.
+
+Google's [rate limits](https://ai.google.dev/gemini-api/docs/rate-limits) apply per project and vary by model. Keys from separate projects can therefore provide independent capacity. The app learns availability from actual requests and remembers cooldowns in memory; it cannot know a project's remaining quota in advance. It honors provider retry delays, and daily-exhausted keys are parked until midnight Pacific rather than retried every few seconds. If all keys for the writer model have exhausted their daily quota, another project key or the reset is needed. Incomplete voice attempts are retried privately before publication; already published speech is never replayed.
 
 | Setting | Default | Purpose |
 | --- | --- | --- |

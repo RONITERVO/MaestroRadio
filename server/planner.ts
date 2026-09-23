@@ -37,6 +37,7 @@ export class Planner {
   readonly system: string;
   constructor(readonly model: string, readonly pool: KeyPool, private settings: Settings, readonly ceiling: number,
     private client = (key: string) => new GoogleGenAI({ apiKey: key }), private counter = countFullRequest) {
+    this.pool = pool.forModel(model);
     this.system = writerInstruction(settings);
   }
   async initialize(signal: AbortSignal) {
