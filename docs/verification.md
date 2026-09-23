@@ -1,5 +1,17 @@
 # Verification — 2026-09-23
 
+## Automatic podcast-specific music
+
+The web and native Android writers now generate a score prompt with the opening passage by default. Both use the same instructions and four original DrawnExplainers music prompts as examples. Custom music descriptions bypass automatic generation; the chosen score is archived and visible in Settings, while only spoken lines appear in the transcript.
+
+- **64 Node tests and 12 Kotlin tests passed**, including automatic/custom/off modes, rejected-draft handling, a fixed score after selection, metadata isolation, and bounded recovery without discarding valid speech. TypeScript/Vite production build, Android debug build and Android lint passed. The updated APK was installed over ADB, preserving the four saved keys.
+- Three real `gemini-2.5-flash` opening requests produced valid prompts in **3.143 s, 4.948 s and 2.939 s**, respectively. Each used one generation response for both narration and music, with 56–62 words of score direction. The nighttime reef used bass clarinet/viola; the folk comedy used pizzicato cello/bass flute; the print workshop used sparse pizzicato cello with a sustained low bass texture. These are small qualitative samples, not a guarantee of subjective music quality.
+- Browser Spanish/Finnish reef episode: one writer-selected prompt, Lyria audio first arrived at **7.811 s**, voice audio at **9.699 s**, scheduled first playback at **11.176 s**. The playback clock advanced **113.704 s** before the final observation, with **zero detected scheduler underruns** and no error event. The prompt was visible in Settings and absent from the transcript; the 390 px layout had no horizontal overflow. The test explicitly ended both streams.
+- Phone Spanish/English bicycle episode `db3b49af-7f7e-4dfa-814e-51893c166930`: automatically selected acoustic guitar/cello, **7 accepted voice turns**, **77.2 s** advanced on the AudioTrack clock, first speech **9.149 s**, **zero detected pipeline underruns**. Lyria stayed active, the selected prompt appeared in the scrollable Settings dialog, and End removed the foreground service. The full writer history survived a switch to `gemini-3-flash-preview`.
+- Local evidence: ignored `test-results/music/automatic-prompts.json`, `browser-automatic.json`, and `phone/`; each actual episode also archives its selected prompt in `music.json`.
+
+These finite runs verify generation, routing, playback clocks and UI behavior. They do not establish that every Lyria rendering will sound as good as an offline mastered video or that provider latency can never cause a pause.
+
 ## Native Kotlin Android, Lyria and desktop launch
 
 Built a native Android application (no WebView or desktop connection), installed over ADB on the connected Honor DNP-NX9 / Android 16, and exercised real Google requests on the phone. The final installed package is `com.ronit.maestroradio`, version 0.2.0, a debug/test build. Keys were provisioned privately, encrypted using Android Keystore, and the plaintext import was deleted; APK and repository contain no credentials.

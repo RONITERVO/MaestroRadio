@@ -12,7 +12,7 @@ import java.util.UUID
 
 data class DisplayLine(val id: Int, val target: Boolean, val text: String)
 data class RadioView(val active: Boolean = false, val paused: Boolean = false, val status: String = "Ready", val error: String = "",
-    val music: String = "", val writer: String = "gemini-2.5-flash", val used: Int = 0, val limit: Int = 1048576,
+    val music: String = "", val musicPrompt: String = "", val writer: String = "gemini-2.5-flash", val used: Int = 0, val limit: Int = 1048576,
     val speed: Float = 1f, val elapsed: Long = 0, val lines: List<DisplayLine> = emptyList())
 object RadioState { val view = MutableStateFlow(RadioView()); var engine: RadioEngine? = null }
 class RadioEngine(context: Context, private val settings: RadioSettings, keys: List<String>, private val finished: () -> Unit) {
@@ -42,14 +42,30 @@ class RadioEngine(context: Context, private val settings: RadioSettings, keys: L
         RadioState.view.update { it.copy(writer = model, used = used, limit = limit) }
     }
     private var task: Job? = null
+    private val musicReady = CompletableDeferred<String?>()
+    private fun chooseMusic(prompt: String, source: String) {
+        if (!settings.music || musicReady.isCompleted || prompt.isBlank()) return
+        File(folder, "music.json").writeText(JSONObject().put("type", "musicPrompt").put("prompt", prompt).put("source", source).toString())
+        RadioState.view.update { it.copy(musicPrompt = prompt) }
+        musicReady.complete(prompt)
+    }
     init { File(folder, "episode.json").writeText(settings.json().toString()) }
     fun start() {
         RadioState.view.value = RadioView(active = true, status = "Following a thought", speed = settings.speed)
         task = scope.launch {
             val ticker = launch { tick() }
-            val music = if (settings.music) launch { Lyria(api, router, player, settings.musicPrompt) { message -> RadioState.view.update { it.copy(music = message) } }.run() } else null
+            val music = if (settings.music) launch {
+                val prompt = musicReady.await() ?: return@launch
+                Lyria(api, router, player, prompt) { message -> RadioState.view.update { it.copy(music = message) } }.run()
+            } else null
             var reason = "Episode ended"
-            try { pipeline(); draining = true; drain(); reason = if (memoryFull) "Memory complete" else "Episode ended" }
+            try {
+                if (settings.music) {
+                    RadioState.view.update { it.copy(music = if (settings.musicPrompt.isBlank()) "Choosing music for this episode…" else "Connecting to Lyria…") }
+                    chooseMusic(settings.musicPrompt, "custom")
+                }
+                pipeline(); draining = true; drain(); reason = if (memoryFull) "Memory complete" else "Episode ended"
+            }
             catch (error: CancellationException) { throw error }
             catch (error: Exception) {
                 RadioState.view.update { it.copy(error = safeMessage(error), status = "Stream issue") }
@@ -69,8 +85,16 @@ class RadioEngine(context: Context, private val settings: RadioSettings, keys: L
         val plans = Channel<Passage>(1)
         val writer = launch {
             try {
+                var accepted = 0
                 while (isActive) {
-                    runway(); plans.send(planner.next())
+                    runway()
+                    val plan = planner.next(); ensureActive()
+                    chooseMusic(plan.raw.optString("musicPrompt"), "writer")
+                    if (++accepted == 3 && settings.music && !musicReady.isCompleted) {
+                        musicReady.complete(null)
+                        RadioState.view.update { it.copy(music = "The writer did not supply a valid music prompt. Speech continues.") }
+                    }
+                    plans.send(plan)
                 }
             } catch (_: MemoryFull) { memoryFull = true; plans.close() }
             catch (error: Exception) { plans.close(error) }
@@ -148,7 +172,7 @@ class RadioEngine(context: Context, private val settings: RadioSettings, keys: L
             .put("playedSamples", player.playedSamples).put("queuedVoiceSamples", player.queuedVoiceSamples).put("firstVoiceMs", firstVoiceMs)
             .put("musicBufferedSeconds", player.musicBufferedSeconds).put("peakBufferedMusicSeconds", player.peakBufferedMusic)
             .put("speed", player.speed.toDouble()).put("paused", player.paused).put("gaps", gaps).put("maxGapMs", maxGapMs)
-            .put("music", RadioState.view.value.music).put("error", RadioState.view.value.error).toString())
+            .put("music", RadioState.view.value.music).put("musicPrompt", RadioState.view.value.musicPrompt).put("error", RadioState.view.value.error).toString())
     }
     private fun saveHeard() { File(folder, "heard.txt").writeText(heard.values.joinToString("\n\n") { it.text.trim() }) }
     fun transcript() = synchronized(captions) { heard.values.joinToString("\n\n") { it.text.trim() } }

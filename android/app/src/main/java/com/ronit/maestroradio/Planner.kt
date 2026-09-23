@@ -16,13 +16,16 @@ class Planner(private val api: GeminiApi, private val keys: KeyRouter, settings:
     private val facts = mutableSetOf<String>()
     private val sentences = mutableSetOf<String>()
     private var count = 0
+    private val autoMusic = settings.music && settings.musicPrompt.isBlank()
+    private var musicChosen = false
     private val expressive = settings.expressive
     private val target = LANGUAGES[settings.target]
     private val native = LANGUAGES[settings.native]
     private val system = templates.getString("writer_${settings.style.isNotBlank()}_${settings.expressive}")
         .replace("__TARGET_NAME__", target.name).replace("__TARGET_CODE__", target.code)
         .replace("__NATIVE_NAME__", native.name).replace("__NATIVE_CODE__", native.code).replace("__LEVEL__", settings.level)
-        .replace("\"__TOPIC__\"", JSONObject.quote(settings.topic)).replace("\"__STYLE__\"", JSONObject.quote(settings.style))
+        .replace("\"__TOPIC__\"", JSONObject.quote(settings.topic)).replace("\"__STYLE__\"", JSONObject.quote(settings.style)) +
+        (if (autoMusic) "\n\n" + templates.getString("music") else "")
     private val schema = JSONObject("""{"type":"object","properties":{"angle":{"type":"string"},"newFacts":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":6},"nextThread":{"type":"string"},"pairs":{"type":"array","minItems":1,"maxItems":4,"items":{"type":"object","properties":{"target":{"type":"string"},"native":{"type":"string"}},"required":["target","native"]}}},"required":["angle","newFacts","nextThread","pairs"]}""").apply {
         getJSONObject("properties").getJSONObject("pairs").getJSONObject("items").getJSONObject("properties").apply {
             getJSONObject("target").put("description", "Sentence in ${target.name}, spoken FIRST.")
@@ -34,11 +37,19 @@ class Planner(private val api: GeminiApi, private val keys: KeyRouter, settings:
     @Synchronized private fun snapshot() = JSONArray(history.toString())
     @Synchronized private fun record(content: JSONObject) { history.put(content) }
     suspend fun next(): Passage {
+        val wantsMusic = autoMusic && !musicChosen && count < 3
+        val responseSchema = JSONObject(schema.toString()).apply {
+            if (wantsMusic) {
+                getJSONObject("properties").put("musicPrompt", JSONObject().put("type", "string").put("minLength", 40).put("maxLength", 1000)
+                    .put("description", "Original 45–85 word instrumental score direction tailored to this episode; production metadata only."))
+                getJSONArray("required").put("musicPrompt")
+            }
+        }
         observe(if (count == 0) "Begin directly with a concise first sentence of about 8–12 words and its faithful translation. Develop that thought in the remaining pairs."
             else "Continue directly after the last planned sentence. Develop something new using the COMPLETE ledger. The previous passage may still be playing.")
         repeat(3) {
             val contents = snapshot()
-            val response = generate(contents)
+            val response = generate(contents, responseSchema)
             val content = response.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content") ?: throw RadioFailure("The writer returned no passage.")
             record(content) // Preserve thought signatures and rejected drafts verbatim.
             val text = content.objects("parts").filter { !it.optBoolean("thought") }.joinToString("") { it.optString("text") }
@@ -54,6 +65,9 @@ class Planner(private val api: GeminiApi, private val keys: KeyRouter, settings:
             if (plan != null && pairs.size in 1..4 && newFacts.isNotEmpty() && newFacts.size <= 6 &&
                 lines.all { it.text.isNotBlank() && it.text.length <= (if (it.target) 300 else 400) } && !repeated &&
                 lines.none { unknownTags(it.text) || (!expressive && stripTags(it.text) != it.text) } && plan.optString("nextThread").isNotBlank()) {
+                val prompt = (plan.opt("musicPrompt") as? String)?.trim()
+                if (wantsMusic && prompt != null && prompt.length in 40..1000) { plan.put("musicPrompt", prompt); musicChosen = true }
+                else plan.remove("musicPrompt") // Bad music metadata must not discard valid narration.
                 sentences.addAll(proposed); facts.addAll(newFacts.map(::fingerprint)); count++; save()
                 return Passage(plan, lines)
             }
@@ -61,7 +75,7 @@ class Planner(private val api: GeminiApi, private val keys: KeyRouter, settings:
         }
         throw RadioFailure("The writer repeated itself or returned invalid passages three times. The full history is saved.")
     }
-    private suspend fun generate(contents: JSONArray): JSONObject {
+    private suspend fun generate(contents: JSONArray, responseSchema: JSONObject): JSONObject {
         var failure: Throwable = ProviderFailure(503)
         for (candidate in listOf(model) + models.filter { it != model }) {
             currentCoroutineContext().ensureActive()
@@ -76,7 +90,7 @@ class Planner(private val api: GeminiApi, private val keys: KeyRouter, settings:
                         if (used + 8192 >= limit) throw MemoryFull()
                         val thinking = if (candidate.startsWith("gemini-2.5")) JSONObject().put("thinkingBudget", 0) else JSONObject().put("thinkingLevel", "MINIMAL")
                         request.put("generationConfig", JSONObject().put("temperature", .8).put("maxOutputTokens", 2048).put("responseMimeType", "application/json")
-                            .put("responseJsonSchema", schema).put("thinkingConfig", thinking))
+                            .put("responseJsonSchema", responseSchema).put("thinkingConfig", thinking))
                         api.rest(key, "models/$candidate:generateContent", request)
                     }
                 }

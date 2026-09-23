@@ -2,6 +2,7 @@ import './style.css';
 import type { Cue, ServerEvent, Settings } from '../shared/protocol.ts';
 import { SAMPLE_RATE } from '../shared/audio.ts';
 import { StreamPlayer } from './player.ts';
+import { LEGACY_MUSIC_PROMPT } from '../shared/music-prompt.ts';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const languages = [
@@ -16,6 +17,7 @@ for (const id of ['target','native']) for (const [code, name] of languages) {
 $<HTMLSelectElement>('native').value = 'en-US';
 const preferences = ['target','native','level','voice','buffer','style','speed','music-prompt','music-volume'];
 try { const saved = JSON.parse(localStorage.getItem('maestro-radio-preferences') || '{}');
+  if (saved.autoMusicVersion !== 1 && saved['music-prompt'] === LEGACY_MUSIC_PROMPT) saved['music-prompt'] = '';
   for (const id of preferences) {
     const input = $<HTMLSelectElement | HTMLTextAreaElement>(id);
     if (typeof saved[id] !== 'string') continue;
@@ -28,7 +30,7 @@ try { const saved = JSON.parse(localStorage.getItem('maestro-radio-preferences')
 $<HTMLSelectElement>('playback-speed').value = $<HTMLSelectElement>('speed').value;
 document.querySelectorAll<HTMLButtonElement>('[data-style]').forEach(button => { button.onclick = () => { $<HTMLTextAreaElement>('style').value = button.dataset.style!; }; });
 function savePreferences() {
-  try { localStorage.setItem('maestro-radio-preferences', JSON.stringify({ ...Object.fromEntries(preferences.map(id => [id, $<HTMLSelectElement>(id).value])), expressive: $<HTMLInputElement>('expressive').checked, music: $<HTMLInputElement>('music').checked })); } catch { /* Private browsing. */ }
+  try { localStorage.setItem('maestro-radio-preferences', JSON.stringify({ ...Object.fromEntries(preferences.map(id => [id, $<HTMLSelectElement>(id).value])), autoMusicVersion: 1, expressive: $<HTMLInputElement>('expressive').checked, music: $<HTMLInputElement>('music').checked })); } catch { /* Private browsing. */ }
 }
 let configured = false;
 let modelInfo = { writer: '', fallbacks: [] as string[], voice: '', keys: '' };
@@ -161,6 +163,7 @@ function handle(event: ServerEvent) {
     }
     case 'audio': player.add(event.data, event.startSample); break;
     case 'music': player.addMusic(event.data, event.sampleRate, event.channels); break;
+    case 'musicPrompt': $('episode-music-prompt').textContent = event.prompt; $('episode-music-details').hidden = false; break;
     case 'musicStatus': $('music-status').textContent = event.detail || (event.state === 'playing' ? 'Lyria is playing. Music softens automatically under speech.' : 'Connecting to Lyria…'); if (event.state === 'unavailable' && event.detail) notice(event.detail); break;
     case 'cue': cues.push({ turn: event.turn, cue: event.cue }); break;
     case 'error': endedWithError = true; notice(event.message); setStatus('Stream issue'); break;
@@ -184,6 +187,8 @@ async function start(random: boolean) {
   cues = []; cueIndex = 0; cueChars = 0; revealed = []; elements.clear(); currentLine = ''; ending = undefined;
   endedWithError = false; follow = true; episodeId = '';
   $('transcript').replaceChildren(); $('notice').hidden = true;
+  $('episode-music-details').hidden = true; $('episode-music-prompt').textContent = '';
+  $('music-status').textContent = !settings.music ? 'Music is off for this episode.' : settings.musicPrompt.trim() ? 'Connecting to Lyria…' : 'Choosing music for this episode…';
   player = new StreamPlayer(settings.bufferMs);
   player.setMusicVolume(settings.musicVolume);
   player.setRate(settings.speed);

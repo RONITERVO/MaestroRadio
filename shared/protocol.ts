@@ -1,4 +1,5 @@
 import { z } from 'zod';
+export const musicPromptSchema = z.string().trim().min(40).max(1000);
 export { SAMPLE_RATE } from './audio.ts';
 export const languageSchema = z.object({ name: z.string().trim().min(1).max(60), code: z.string().regex(/^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/) });
 export const settingsSchema = z.object({
@@ -6,7 +7,7 @@ export const settingsSchema = z.object({
   style: z.string().trim().max(1200).default(''),
   expressive: z.boolean().default(false),
   music: z.boolean().default(true),
-  musicPrompt: z.string().trim().max(1000).default('Warm cinematic ambient, soft felt piano, gentle acoustic textures, spacious and slowly evolving, instrumental, understated documentary score'),
+  musicPrompt: z.string().trim().max(1000).default(''),
   musicVolume: z.number().min(0).max(1).default(0.6),
   speed: z.number().min(1).max(2).default(1),
   target: languageSchema.default({ name: 'Spanish', code: 'es-ES' }),
@@ -21,6 +22,7 @@ export const planSchema = z.object({
   newFacts: z.array(z.string().min(1).max(200)).min(1).max(6),
   nextThread: z.string().min(1).max(300),
   pairs: z.array(z.object({ target: z.string().min(1).max(300), native: z.string().min(1).max(400) })).min(1).max(4),
+  musicPrompt: musicPromptSchema.optional(),
 });
 export type Plan = z.infer<typeof planSchema>;
 export type Line = { text: string; code: string; kind: 'target' | 'native' };
@@ -28,6 +30,7 @@ export type Cue = { text: string; line: number; kind: 'target' | 'native'; start
 export type ServerEvent =
   | { type: 'session'; id: string; topic: string; plannerModel: string; liveModel: string }
   | { type: 'writer'; model: string }
+  | { type: 'musicPrompt'; prompt: string; source: 'writer' | 'custom' }
   | { type: 'music'; data: string; sampleRate: number; channels: number }
   | { type: 'musicStatus'; state: 'connecting' | 'playing' | 'unavailable'; detail?: string }
   | { type: 'status'; state: string; detail?: string }

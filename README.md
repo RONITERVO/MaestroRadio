@@ -52,7 +52,9 @@ The native writer shares generated prompt templates and the desktop default/fall
 
 ## Lyria background music
 
-Music is enabled by default and can be turned off under **Music** (Android: **Style & music**) for the next episode. Describe the sound freely: gentle folk instruments, atmospheric piano, restrained jazz, and so on. Volume changes immediately in Settings; music remains at its natural speed when speech speeds up.
+Music is enabled by default and can be turned off under **Music** (Android: **Style & music**) for the next episode. Leave the music description blank for **automatic scoring**: the writer composes a new prompt for the podcast's subject and storytelling style, using actual DrawnExplainers video scores as examples. It chooses concrete instruments, playing techniques, space and mood, with room for narration. You can still enter a custom description to override it. Existing installations replace the old stock description with automatic mode once; custom descriptions are preserved.
+
+The score prompt arrives in the normal opening passage, without a separate LLM request. Lyria connects in parallel with speech generation and retains the same prompt throughout the episode and any music reconnects. Settings shows the chosen prompt; it never enters spoken lines or the transcript. If the writer returns malformed music metadata, valid narration continues and the next normal passage asks again, up to three passages, after which music is skipped with a status message. Volume changes immediately in Settings; music remains at its natural speed when speech speeds up.
 
 The stream uses [`lyria-realtime-exp`](https://ai.google.dev/gemini-api/docs/realtime-music-generation), **QUALITY** mode, guidance 4.5 and temperature 1.0, with sparse arrangement settings. The approach comes from DrawnExplainers: a continuous instrumental bed, a gradual entrance, and speech-driven compression (threshold 0.06, ratio 9, attack 12 ms, release 420 ms). The browser uses a stereo audio worklet and a soft limiter. Android uses hardware playback, speech-level tracking and reserved mixing headroom. Offline FFmpeg loudness normalization cannot be reproduced exactly in a causal live stream, so this is an adaptation of that mix, not identical mastered output.
 
@@ -157,6 +159,7 @@ Each episode creates an ignored `data/<uuid>/` folder:
 - `ledger.jsonl`: accepted plans, observed cues, completed/rejected transcripts, coverage, voice timing, terminal reason, last acknowledged playback position and browser playback diagnostics.
 - `audio.pcm`: raw 24 kHz, mono, signed 16-bit little-endian generated audio.
 - `memory.json`: complete writer conversation and usage at graceful shutdown.
+- `music.json`: the selected music prompt and whether it came from the writer or a custom description (when music is enabled and a prompt was selected). Android stores this in its private episode folder too.
 
 Generated and actually played audio are distinguished; ending may leave unplayed generated audio in the archive. These files contain your listening content. They remain on this machine until you remove them. Disconnect ends generation. This version supports pause/resume within a tab, **not automatic episode resumption after closing the tab or restarting the server**. Archives make that extension possible without pretending unheard material was played.
 
@@ -169,6 +172,8 @@ ffplay -f s16le -ar 24000 -ac 1 data/<episode-id>/audio.pcm
 ## Verification
 
 `npm test` covers context exhaustion, complete-history counting, bounded repair, language reversals, key handling, split transcription, real-audio gating, CJK text, immutable cue timing, playback backpressure, ordered concurrent narration, private voice repair, Live completion/cancellation, and browser audio scheduling through pauses/underruns.
+
+`npm run bench:music-prompts` performs three finite live writer requests for contrasting subjects/styles, saving the generated score prompts and opening-passage latency under `test-results/music/`. It uses your configured keys and consumes writer quota, but does not generate audio. Unit tests cover automatic/custom/off modes, selecting only an accepted passage's score, keeping music metadata out of speech, and bounded recovery from malformed music fields on both platforms.
 
 Optional paid live check (two writer batches, finite and separately archived):
 

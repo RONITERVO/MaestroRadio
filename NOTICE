@@ -24,6 +24,9 @@ The Lyria quality-mode configuration and speech-keyed music compression are
 informed by Roni Tervo's DrawnExplainers (lib/music.mjs and lib/build.mjs) and
 MaestroTutor. This implementation generates a continuous live stream and uses
 causal playback mixing instead of the offline FFmpeg loudness-normalization pass.
+Automatic score direction includes four of the same author's music prompts from
+DrawnExplainers/sets/not-arbitrary (Chinese characters, card suits, chess pieces,
+and Roman numerals) as examples for the episode writer.
 
 Android uses OkHttp (Square, Apache-2.0), Kotlin and kotlinx.coroutines
 (JetBrains, Apache-2.0), and the standard Gradle wrapper (Apache-2.0).

@@ -14,11 +14,11 @@ import javax.crypto.spec.GCMParameterSpec
 
 data class Language(val code: String, val name: String)
 val LANGUAGES = listOf("es-ES:Spanish", "en-US:English", "fi-FI:Finnish", "fr-FR:French", "de-DE:German", "it-IT:Italian", "pt-BR:Portuguese", "sv-SE:Swedish", "nl-NL:Dutch", "pl-PL:Polish", "tr-TR:Turkish", "el-GR:Greek", "ru-RU:Russian", "uk-UA:Ukrainian", "ja-JP:Japanese", "ko-KR:Korean", "cmn-CN:Mandarin Chinese", "ar-XA:Arabic", "hi-IN:Hindi", "bn-IN:Bengali", "id-ID:Indonesian", "vi-VN:Vietnamese", "th-TH:Thai", "ro-RO:Romanian").map { Language(it.substringBefore(':'), it.substringAfter(':')) }
-const val DEFAULT_MUSIC = "Warm cinematic ambient, soft felt piano, gentle acoustic textures, spacious and slowly evolving, instrumental, understated documentary score"
+const val LEGACY_MUSIC = "Warm cinematic ambient, soft felt piano, gentle acoustic textures, spacious and slowly evolving, instrumental, understated documentary score"
 data class RadioSettings(
     val topic: String = "", val target: Int = 0, val native: Int = 1, val level: String = "B1",
     val style: String = "", val expressive: Boolean = false, val voice: String = "Kore",
-    val speed: Float = 1f, val music: Boolean = true, val musicPrompt: String = DEFAULT_MUSIC, val musicVolume: Float = .6f
+    val speed: Float = 1f, val music: Boolean = true, val musicPrompt: String = "", val musicVolume: Float = .6f
 ) {
     fun json() = JSONObject().put("topic", topic).put("target", target).put("native", native).put("level", level)
         .put("style", style).put("expressive", expressive).put("voice", voice).put("speed", speed.toDouble()).put("music", music).put("musicPrompt", musicPrompt).put("musicVolume", musicVolume.toDouble())
@@ -27,7 +27,7 @@ data class RadioSettings(
             val j = runCatching { JSONObject(value) }.getOrDefault(JSONObject())
             return RadioSettings(j.optString("topic").take(2000), j.optInt("target", 0).coerceIn(LANGUAGES.indices), j.optInt("native", 1).coerceIn(LANGUAGES.indices),
                 j.optString("level", "B1"), j.optString("style").take(1200), j.optBoolean("expressive"), j.optString("voice", "Kore"),
-                j.optDouble("speed", 1.0).toFloat().coerceIn(1f, 2f), j.optBoolean("music", true), j.optString("musicPrompt", DEFAULT_MUSIC).take(1000), j.optDouble("musicVolume", .6).toFloat().coerceIn(0f, 1f))
+                j.optDouble("speed", 1.0).toFloat().coerceIn(1f, 2f), j.optBoolean("music", true), j.optString("musicPrompt").trim().take(1000), j.optDouble("musicVolume", .6).toFloat().coerceIn(0f, 1f))
         }
     }
 }
@@ -36,7 +36,14 @@ data class RadioSettings(
 class Preferences(private val context: Context) {
     private val prefs = context.getSharedPreferences("radio", Context.MODE_PRIVATE)
     var settings: RadioSettings
-        get() = RadioSettings.read(prefs.getString("settings", "{}")!!)
+        get() {
+            var saved = RadioSettings.read(prefs.getString("settings", "{}")!!)
+            if (!prefs.getBoolean("autoMusicV1", false)) {
+                if (saved.musicPrompt == LEGACY_MUSIC) saved = saved.copy(musicPrompt = "")
+                prefs.edit().putString("settings", saved.json().toString()).putBoolean("autoMusicV1", true).apply()
+            }
+            return saved
+        }
         set(value) { prefs.edit().putString("settings", value.json().toString()).apply() }
     private fun secret(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }

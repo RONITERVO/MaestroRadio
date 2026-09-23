@@ -37,8 +37,8 @@
             <details class="style-options"><summary>Music <span>Lyria RealTime</span></summary>
               <label class="expression-option"><input id="music" type="checkbox" checked /> Background music</label>
               <label class="field-label" for="music-prompt">THE SOUND OF THIS EPISODE</label>
-              <textarea id="music-prompt" rows="2" maxlength="1000">Warm cinematic ambient, soft felt piano, gentle acoustic textures, spacious and slowly evolving, instrumental, understated documentary score</textarea>
-              <p class="help">Generated continuously with your Gemini keys. Music softens under the voice. Lyria needs access on at least one key.</p>
+              <textarea id="music-prompt" rows="2" maxlength="1000" placeholder="Automatic for this podcast · or describe your own music…"></textarea>
+              <p class="help">Leave blank for a score tailored to your topic and style. Music softens under the voice. Lyria needs access on at least one key.</p>
             </details>
             <button class="begin" type="submit" id="begin">Begin listening <span aria-hidden="true">↗</span></button>
             <p class="start-note" id="key-note">Your curiosity. Your pace. Your API key.</p>
@@ -68,6 +68,7 @@
           <p class="help">Speed changes immediately, keeping the voice’s pitch and the transcript together.</p>
           <label class="speed-setting"><span class="field-label">MUSIC VOLUME</span><input id="music-volume" type="range" min="0" max="1" step="0.05" value="0.6" /></label>
           <p id="music-status" class="help">Music follows the episode’s pause and resume controls.</p>
+          <details id="episode-music-details" hidden><summary>This episode’s music</summary><p id="episode-music-prompt" class="help"></p></details>
           <div id="model-info" class="model-info"></div>
           <button class="begin" value="save">Done <span aria-hidden="true">↗</span></button>
         </form>

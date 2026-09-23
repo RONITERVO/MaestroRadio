@@ -121,8 +121,8 @@ class MainActivity : Activity() {
         }; optional.addView(presets)
         expressive = CheckBox(this).apply { text = "Expressive voice"; isChecked = saved.expressive; setTextColor(ink) }; optional.addView(expressive)
         music = CheckBox(this).apply { text = "Lyria background music"; isChecked = saved.music; setTextColor(ink) }; optional.addView(music)
-        musicPrompt = input("Describe the music…", saved.musicPrompt, 1000, 5); optional.addView(musicPrompt)
-        optional.addView(label("Instrumental music softens under speech. Both streams use your Gemini keys.", 13f))
+        musicPrompt = input("Automatic for this podcast · or describe your own music…", saved.musicPrompt, 1000, 5); optional.addView(musicPrompt)
+        optional.addView(label("Leave blank for a score tailored to your topic and style. Music softens under speech. Both streams use your Gemini keys.", 13f))
         setupFields.addView(label("BYOK · DIRECT FROM YOUR PHONE", 11f))
         root.addView(setup, LinearLayout.LayoutParams(-1, 0, 1f))
         transcript = column().apply { setPadding(0, dp(24), 0, dp(32)) }
@@ -151,7 +151,7 @@ class MainActivity : Activity() {
     }
     override fun onStop() { collector?.cancel(); super.onStop() }
     private fun currentSettings(): RadioSettings = RadioSettings(topic.text.toString().trim(), target.selectedItemPosition, native.selectedItemPosition, level.selectedItem.toString(),
-        style.text.toString().trim(), expressive.isChecked, voice.selectedItem.toString(), speed, music.isChecked, musicPrompt.text.toString().ifBlank { DEFAULT_MUSIC }, musicVolume)
+        style.text.toString().trim(), expressive.isChecked, voice.selectedItem.toString(), speed, music.isChecked, musicPrompt.text.toString().trim(), musicVolume)
     private fun begin() {
         if (RadioState.view.value.active) return
         if (preferences.keys().isEmpty()) { keyDialog(); return }
@@ -218,12 +218,13 @@ class MainActivity : Activity() {
             })
         })
         panel.addView(label(RadioState.view.value.music.ifBlank { "Music follows pause and resume. Enable it under Style & music for your next episode." }, 13f))
+        if (RadioState.view.value.musicPrompt.isNotBlank()) panel.addView(label("THIS EPISODE’S MUSIC\n${RadioState.view.value.musicPrompt}", 13f))
         panel.addView(label("WRITER  ${RadioState.view.value.writer}\nFALLBACKS  3 Flash → 2.5 Flash Lite\nVOICE  Gemini Live\nMUSIC  Lyria RealTime · Quality", 11f))
         panel.addView(button("Save spoken transcript") {
             exportedText = RadioState.engine?.transcript() ?: RadioState.view.value.lines.joinToString("\n\n") { it.text }
             startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("text/plain").putExtra(Intent.EXTRA_TITLE, "maestro-radio.txt"), 3)
         })
-        AlertDialog.Builder(this).setTitle("Make it yours.").setView(panel).setPositiveButton("Done", null).show()
+        AlertDialog.Builder(this).setTitle("Make it yours.").setView(ScrollView(this).apply { addView(panel) }).setPositiveButton("Done", null).show()
     }
     private fun keyDialog() {
         val panel = column().apply { setPadding(dp(20), dp(8), dp(20), dp(8)) }

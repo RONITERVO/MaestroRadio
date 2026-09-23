@@ -19,6 +19,7 @@
     "replay": "tsx scripts/replay.ts",
     "experiment:voice": "tsx scripts/voice-experiment.ts",
     "smoke:music": "tsx scripts/smoke-music.ts",
+    "bench:music-prompts": "tsx scripts/bench-music-prompts.ts",
     "android:prompts": "tsx scripts/sync-android-prompts.ts",
     "android:install": "tsx scripts/install-android.ts"
   },
